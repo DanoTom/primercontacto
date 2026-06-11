@@ -1,9 +1,9 @@
 // La Sala: un Durable Object por cada sala de juego.
 // Todo el estado de la partida vive acá, en memoria del objeto.
 //
-// Etapa 1: lobby. Los jugadores se unen con nombre y avatar,
-// se ven entre sí en tiempo real, y el creador puede iniciar
-// la transmisión cuando hay 4 o más.
+// Etapa 2: la Terminal en vivo. La sala retransmite el tecleo de
+// cada jugador (borradores, con borrones) y los mensajes enviados,
+// con un color de fósforo propio por jugador.
 //
 // Nota sobre hibernación: la sala puede "dormirse" entre mensajes
 // para no gastar el plan gratuito. Por eso los datos de cada jugador
@@ -16,6 +16,9 @@ const MAX_JUGADORES = 8;
 const MIN_JUGADORES = 4;
 const MAX_NOMBRE = 12;
 const CANT_AVATARES = 8;
+const CANT_COLORES = 8;
+const MAX_MENSAJE = 200;
+const MAX_HISTORIAL = 200;
 
 export class Sala extends DurableObject {
   async fetch(request) {
@@ -40,8 +43,18 @@ export class Sala extends DurableObject {
     return Response.json({ ok: true, mensaje: "SALA ACTIVA" });
   }
 
+  // La fase se cachea en memoria: el tecleo llega cada ~100 ms
+  // y no queremos consultar el storage en cada ráfaga.
   async fase() {
-    return (await this.ctx.storage.get("fase")) || "lobby";
+    if (this._fase === undefined) {
+      this._fase = (await this.ctx.storage.get("fase")) || "lobby";
+    }
+    return this._fase;
+  }
+
+  async cambiarFase(fase) {
+    this._fase = fase;
+    await this.ctx.storage.put("fase", fase);
   }
 
   // Reconstruye la lista de jugadores desde las conexiones vivas.
@@ -73,6 +86,12 @@ export class Sala extends DurableObject {
         break;
       case "iniciar":
         await this.manejarIniciar(ws);
+        break;
+      case "tecleo":
+        await this.manejarTecleo(ws, msg);
+        break;
+      case "enviar":
+        await this.manejarEnviar(ws, msg);
         break;
     }
   }
@@ -109,10 +128,17 @@ export class Sala extends DurableObject {
     const orden = (await this.ctx.storage.get("orden")) || 0;
     await this.ctx.storage.put("orden", orden + 1);
 
+    // Color de fósforo: el más bajo que no esté usando nadie,
+    // así nunca hay dos jugadores activos con el mismo.
+    const usados = new Set(jugadores.map((j) => j.color));
+    let color = 0;
+    while (usados.has(color) && color < CANT_COLORES - 1) color++;
+
     const jugador = {
       id: crypto.randomUUID(),
       nombre,
       avatar,
+      color,
       orden,
     };
     ws.serializeAttachment(jugador);
@@ -140,8 +166,58 @@ export class Sala extends DurableObject {
       });
     }
 
-    await this.ctx.storage.put("fase", "partida");
-    this.difundir({ tipo: "faseCambio", fase: "partida" });
+    await this.cambiarFase("partida");
+    this.difundir({
+      tipo: "faseCambio",
+      fase: "partida",
+      jugadores: this.fichas(),
+    });
+  }
+
+  // Datos públicos de los jugadores (sin el orden interno).
+  fichas() {
+    return this.jugadores().map((j) => ({
+      id: j.id,
+      nombre: j.nombre,
+      avatar: j.avatar,
+      color: j.color,
+    }));
+  }
+
+  // ─── La Terminal ───
+
+  // Borrador en curso: se retransmite a todos menos a quien teclea
+  // (que ya ve su propio texto en el campo de entrada).
+  async manejarTecleo(ws, msg) {
+    const yo = ws.deserializeAttachment();
+    if (!yo) return;
+    if ((await this.fase()) !== "partida") return;
+
+    const texto = String(msg.texto ?? "").slice(0, MAX_MENSAJE);
+    this.difundir({ tipo: "tecleo", jugadorId: yo.id, texto }, ws);
+  }
+
+  // Mensaje enviado (Enter): pasa al historial y se difunde a todos.
+  async manejarEnviar(ws, msg) {
+    const yo = ws.deserializeAttachment();
+    if (!yo) return;
+    if ((await this.fase()) !== "partida") return;
+
+    const texto = String(msg.texto ?? "").trim().slice(0, MAX_MENSAJE);
+    if (!texto) return;
+
+    const mensaje = {
+      tipo: "mensaje",
+      jugadorId: yo.id,
+      nombre: yo.nombre,
+      color: yo.color,
+      texto,
+    };
+    if (!this.historial) this.historial = [];
+    this.historial.push(mensaje);
+    if (this.historial.length > MAX_HISTORIAL) this.historial.shift();
+
+    this.difundir(mensaje);
   }
 
   async webSocketClose(ws) {
@@ -158,10 +234,19 @@ export class Sala extends DurableObject {
     // la próxima vez que alguien use este código, arranca de cero).
     if (restantes.length === 0) {
       await this.ctx.storage.deleteAll();
+      this._fase = undefined;
+      this.historial = [];
       return;
     }
-    if ((await this.fase()) === "lobby") {
+    const fase = await this.fase();
+    if (fase === "lobby") {
       this.difundirLobby(ws);
+    } else if (fase === "partida") {
+      // Borra la línea viva de quien se fue, si estaba tecleando.
+      const yo = ws.deserializeAttachment();
+      if (yo) {
+        this.difundir({ tipo: "tecleo", jugadorId: yo.id, texto: "" }, ws);
+      }
     }
   }
 
@@ -191,9 +276,10 @@ export class Sala extends DurableObject {
     }
   }
 
-  difundir(obj) {
+  difundir(obj, excluir = null) {
     const dato = JSON.stringify(obj);
     for (const ws of this.ctx.getWebSockets()) {
+      if (ws === excluir) continue;
       try {
         ws.send(dato);
       } catch {

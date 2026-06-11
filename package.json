@@ -5,7 +5,8 @@
   "description": "Juego web multijugador de deducción social con estética de aparato ochentoso",
   "scripts": {
     "dev": "wrangler dev",
-    "deploy": "wrangler deploy"
+    "deploy": "wrangler deploy",
+    "probar": "node pruebas/etapa1.mjs && node pruebas/etapa2.mjs"
   },
   "devDependencies": {
     "wrangler": "^4.99.0"

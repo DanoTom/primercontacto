@@ -182,3 +182,51 @@ button:disabled {
   padding: 2px 6px;
   white-space: nowrap;
 }
+
+/* La Terminal */
+#pantalla-partida {
+  height: 100dvh; /* dvh: alto real visible en celulares */
+  max-width: 640px;
+  padding: 12px;
+  gap: 8px;
+}
+
+#terminal {
+  flex: 1;
+  overflow-y: auto;
+  background: #060d08;
+  border: 1px solid #2a4a30;
+  padding: 10px;
+  font-size: 14px;
+  line-height: 1.5;
+  word-break: break-word;
+}
+
+.linea-historial { white-space: pre-wrap; }
+
+.linea-viva {
+  white-space: pre-wrap;
+  opacity: 0.75;
+  font-style: italic;
+}
+
+.cursor {
+  animation: parpadeo 1s steps(1) infinite;
+}
+
+@keyframes parpadeo {
+  50% { opacity: 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cursor { animation: none; }
+}
+
+#form-mensaje {
+  display: flex;
+  gap: 8px;
+}
+
+#form-mensaje input { flex: 1; }
+
+#boton-transmitir { width: auto; min-width: 64px; }

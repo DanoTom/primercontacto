@@ -45,10 +45,17 @@
     <div id="nota-iniciar" class="mensaje"></div>
   </section>
 
-  <!-- ═══ PANTALLA: PARTIDA (placeholder hasta la Etapa 3) ═══ -->
+  <!-- ═══ PANTALLA: PARTIDA ═══ -->
   <section id="pantalla-partida" class="pantalla">
-    <h1>:: TRANSMISIÓN INICIADA ::</h1>
-    <p class="subtitulo">LA TERMINAL SE CONSTRUYE EN LA PRÓXIMA ETAPA</p>
+    <div id="terminal" aria-live="polite">
+      <div id="historial"></div>
+      <div id="lineas-vivas"></div>
+    </div>
+    <form id="form-mensaje" autocomplete="off">
+      <input id="campo-mensaje" type="text" maxlength="200"
+             placeholder="ESCRIBÍ EN LA TERMINAL..." autocomplete="off">
+      <button type="submit" id="boton-transmitir">TX</button>
+    </form>
   </section>
 
   <script src="avatares.js"></script>

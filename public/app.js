@@ -10,6 +10,8 @@ const estado = {
   tuId: null,
   avatarElegido: 0,
   fase: "inicio",
+  jugadores: {}, // id → { nombre, avatar, color }
+  vivos: {}, // id → texto que está tecleando ahora
 };
 
 // ─── Pantallas ───
@@ -86,7 +88,27 @@ function manejarMensaje(msg) {
       break;
 
     case "faseCambio":
-      if (msg.fase === "partida") mostrarPantalla("partida");
+      if (msg.fase === "partida") {
+        registrarJugadores(msg.jugadores);
+        iniciarTerminal();
+        mostrarPantalla("partida");
+      }
+      break;
+
+    case "tecleo":
+      if (msg.texto) {
+        estado.vivos[msg.jugadorId] = msg.texto;
+      } else {
+        delete estado.vivos[msg.jugadorId];
+      }
+      dibujarLineasVivas();
+      break;
+
+    case "mensaje":
+      // El mensaje enviado reemplaza la línea viva de ese jugador.
+      delete estado.vivos[msg.jugadorId];
+      dibujarLineasVivas();
+      agregarAlHistorial(msg);
       break;
 
     case "error":
@@ -139,6 +161,89 @@ function escaparHTML(texto) {
   div.textContent = texto;
   return div.innerHTML;
 }
+
+// ─── La Terminal ───
+
+function registrarJugadores(lista) {
+  estado.jugadores = {};
+  lista.forEach((j) => {
+    estado.jugadores[j.id] = j;
+  });
+}
+
+function colorDe(jugadorId) {
+  const j = estado.jugadores[jugadorId];
+  return COLORES[j ? j.color : 0];
+}
+
+function nombreDe(jugadorId) {
+  const j = estado.jugadores[jugadorId];
+  return j ? j.nombre : "???";
+}
+
+// El tecleo se transmite agrupado cada ~100 ms (no tecla por tecla),
+// pero en pantalla se siente en vivo, borrones incluidos.
+function iniciarTerminal() {
+  estado.vivos = {};
+  $("historial").innerHTML = "";
+  $("lineas-vivas").innerHTML = "";
+  $("campo-mensaje").value = "";
+
+  let ultimoEnviado = "";
+  if (estado.relojTecleo) clearInterval(estado.relojTecleo);
+  estado.relojTecleo = setInterval(() => {
+    if (estado.fase !== "partida") return;
+    const texto = $("campo-mensaje").value;
+    if (texto !== ultimoEnviado) {
+      ultimoEnviado = texto;
+      estado.ws.send(JSON.stringify({ tipo: "tecleo", texto }));
+    }
+  }, 100);
+}
+
+function agregarAlHistorial(msg) {
+  const linea = document.createElement("div");
+  linea.className = "linea-historial";
+  const nombre = document.createElement("span");
+  nombre.style.color = COLORES[msg.color] || COLORES[0];
+  nombre.textContent = `${msg.nombre}> `;
+  const texto = document.createElement("span");
+  texto.textContent = msg.texto;
+  linea.append(nombre, texto);
+  $("historial").appendChild(linea);
+
+  // Auto-scroll al fondo para seguir la conversación.
+  const term = $("terminal");
+  term.scrollTop = term.scrollHeight;
+}
+
+function dibujarLineasVivas() {
+  const zona = $("lineas-vivas");
+  zona.innerHTML = "";
+  Object.entries(estado.vivos).forEach(([id, texto]) => {
+    const linea = document.createElement("div");
+    linea.className = "linea-viva";
+    linea.style.color = colorDe(id);
+    linea.textContent = `> ${nombreDe(id)} ESTÁ ESCRIBIENDO: ${texto}`;
+    const cursor = document.createElement("span");
+    cursor.className = "cursor";
+    cursor.textContent = "█";
+    linea.appendChild(cursor);
+    zona.appendChild(linea);
+  });
+  const term = $("terminal");
+  term.scrollTop = term.scrollHeight;
+}
+
+$("form-mensaje").onsubmit = (evento) => {
+  evento.preventDefault();
+  const campo = $("campo-mensaje");
+  const texto = campo.value.trim();
+  if (!texto || !estado.ws) return;
+  estado.ws.send(JSON.stringify({ tipo: "enviar", texto }));
+  campo.value = "";
+  campo.focus();
+};
 
 // ─── Acciones de inicio ───
 
