@@ -50,6 +50,9 @@ function mostrarPantalla(nombre) {
   );
   $(`pantalla-${nombre}`).classList.add("activa");
   estado.fase = nombre;
+  // Música de fondo en las pantallas tranquilas; en la partida,
+  // la tensión la ponen la terminal y la alarma.
+  Sonido.musica(["inicio", "lobby", "final"].includes(nombre));
 }
 
 function avisar(texto) {
@@ -97,8 +100,11 @@ function conectar(codigo) {
 
   ws.onclose = () => {
     if (estado.fase !== "inicio") {
+      // Se cayó la conexión a mitad de juego: dejar el código listo
+      // para que reconectar sea un solo botón.
       mostrarPantalla("inicio");
-      avisar("SEÑAL PERDIDA. VOLVÉ A INTENTAR.");
+      $("campo-codigo").value = estado.codigo || "";
+      avisar("SEÑAL PERDIDA. TOCÁ «UNIRSE A SALA» PARA RECUPERAR TU PUESTO.");
     } else if (!estado.huboError) {
       // La conexión en vivo nunca se estableció (típico de redes
       // corporativas que bloquean WebSockets).
@@ -127,6 +133,14 @@ function manejarMensaje(msg) {
       estado.contactadoId = msg.contactadoId;
       dibujarRevelacion(msg);
       mostrarPantalla("revelacion");
+      break;
+
+    case "reconexion":
+      manejarReconexion(msg);
+      break;
+
+    case "presencia":
+      marcarPresencia(msg.jugadorId, msg.conectado);
       break;
 
     case "confirmados":
@@ -233,9 +247,54 @@ function manejarFaseCambio(msg) {
     dibujarFinal(msg.resultado);
     mostrarPantalla("final");
   } else if (msg.fase === "lobby") {
-    // Revancha: el lobby actualizado llega en el próximo mensaje.
+    // Revancha o partida anulada: el lobby actualizado llega después.
     mostrarPantalla("lobby");
+    if (msg.aviso) $("nota-iniciar").textContent = msg.aviso;
   }
+}
+
+// ─── Reconexión: el operador caído recupera su puesto ───
+
+function manejarReconexion(msg) {
+  estado.miRol = msg.rol;
+  estado.contactadoId = msg.contactadoId;
+  registrarJugadores(msg.jugadores);
+  estado.listaJugadores = msg.jugadores;
+
+  if (msg.fase === "revelacion") {
+    dibujarRevelacion(msg);
+    mostrarPantalla("revelacion");
+    return;
+  }
+
+  if (msg.fase === "partida") {
+    prepararPartida();
+    (msg.historial || []).forEach((linea) => {
+      if (linea.tipo === "sistema") agregarLineaSistema(linea.texto, true);
+      else agregarAlHistorial(linea);
+    });
+    if (msg.emergenciaAgotada) bloquearEmergencia("");
+    (msg.desconectados || []).forEach((id) => marcarPresencia(id, false));
+    iniciarReloj(msg.restanteMs, "reloj");
+    mostrarPantalla("partida");
+    return;
+  }
+
+  if (msg.fase === "juicio") {
+    dibujarJuicio();
+    if (msg.yaVotaste) {
+      votoEmitido = true;
+      $("lista-sospechosos").querySelectorAll("button").forEach((b) => (b.disabled = true));
+      $("estado-votos").textContent = "TU VOTO YA ESTÁ SELLADO.";
+    }
+    iniciarReloj(msg.restanteMs, "reloj-juicio");
+    mostrarPantalla("juicio");
+  }
+}
+
+function marcarPresencia(jugadorId, conectado) {
+  const ficha = $(`ficha-${jugadorId}`);
+  if (ficha) ficha.classList.toggle("caida", !conectado);
 }
 
 // ─── Lobby ───
@@ -420,15 +479,18 @@ function agregarAlHistorial(msg) {
   term.scrollTop = term.scrollHeight;
 }
 
-function agregarLineaSistema(texto) {
+function agregarLineaSistema(texto, silencioso = false) {
   const linea = document.createElement("div");
   linea.className = "linea-sistema";
   linea.textContent = `*** ${texto} ***`;
   $("historial").appendChild(linea);
 
   // Tono de transmisión + vibración (donde el dispositivo lo soporte).
-  Sonido.transmision();
-  if (navigator.vibrate) navigator.vibrate(80);
+  // En la reposición del historial tras reconectar, todo va en silencio.
+  if (!silencioso) {
+    Sonido.transmision();
+    if (navigator.vibrate) navigator.vibrate(80);
+  }
 
   const term = $("terminal");
   term.scrollTop = term.scrollHeight;
@@ -768,6 +830,8 @@ $("perilla-audio").onclick = () => {
 };
 
 actualizarPerilla(Sonido.quiereAudio());
+// La pantalla inicial ya pide música (sonará cuando se encienda el audio).
+Sonido.musica(true);
 
 // Todo botón del aparato hace click mecánico al presionarse.
 document.addEventListener("pointerdown", (evento) => {

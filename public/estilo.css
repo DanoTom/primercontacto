@@ -635,6 +635,14 @@ button.peligro:active:not(:disabled), #boton-emergencia:active:not(:disabled) {
 
 .ficha-avatar .cara { width: 100%; aspect-ratio: 1; height: auto; }
 
+/* Polaroid caída: el operador perdió la señal */
+.ficha-avatar.caida {
+  transform: rotate(calc(var(--rot, 0deg) + 9deg)) translateY(4px);
+  opacity: 0.5;
+}
+
+.ficha-avatar.caida .cara { filter: grayscale(1) brightness(0.7); }
+
 .ficha-avatar .nombre-ficha {
   font-family: var(--fuente-mano);
   font-size: 13px;

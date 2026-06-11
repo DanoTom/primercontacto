@@ -64,6 +64,7 @@ export class Sala extends DurableObject {
         costoTransmision: 2000,
         umbralTransmision: 3000,
         bonoReinicio: 3000,
+        anulacion: 2000,
       };
     }
     return {
@@ -74,6 +75,7 @@ export class Sala extends DurableObject {
       costoTransmision: 45_000, // lo que resta al reloj la primera letra
       umbralTransmision: 60_000, // mínimo restante para poder transmitir
       bonoReinicio: 60_000, // compensación al cambiar la palabra
+      anulacion: 30_000, // tolerancia si se cae el Contactado o el Metamorfo
     };
   }
 
@@ -209,7 +211,7 @@ export class Sala extends DurableObject {
     if (ws.deserializeAttachment()) return; // ya está unido
 
     if ((await this.fase()) !== "lobby") {
-      return this.rechazar(ws, "TRANSMISIÓN EN CURSO. NO SE ADMITEN NUEVOS OPERADORES.");
+      return this.manejarReconexion(ws, msg);
     }
 
     const jugadores = this.jugadores();
@@ -246,6 +248,106 @@ export class Sala extends DurableObject {
     ws.serializeAttachment(jugador);
 
     this.enviar(ws, { tipo: "bienvenida", tuId: jugador.id });
+    await this.difundirLobby();
+  }
+
+  // ─── Reconexión durante la partida ───
+  // Mismo código de sala + mismo nombre = recupera su identidad,
+  // su rol y (si corresponde) la palabra secreta.
+  async manejarReconexion(ws, msg) {
+    const fase = await this.fase();
+    const plantel = await this.leer("plantel", null);
+    const nombre = String(msg.nombre || "").trim().toLowerCase();
+
+    if (!plantel || fase === "final") {
+      return this.rechazar(ws, "TRANSMISIÓN EN CURSO. NO SE ADMITEN NUEVOS OPERADORES.");
+    }
+
+    const conectados = new Set(this.jugadores().map((j) => j.id));
+    const entrada = Object.values(plantel).find(
+      (j) => j.nombre.toLowerCase() === nombre && !conectados.has(j.id)
+    );
+    if (!entrada) {
+      return this.rechazar(
+        ws,
+        "TRANSMISIÓN EN CURSO. SOLO PUEDE VOLVER UN OPERADOR CAÍDO, CON SU MISMO NOMBRE."
+      );
+    }
+
+    ws.serializeAttachment(entrada);
+    this.cancelarAnulacion(entrada.id);
+
+    const roles = await this.leer("roles", {});
+    const rol = roles[entrada.id];
+    const finFase = await this.leer("finFase", Date.now());
+    const usos = await this.leer("usos", {});
+    const votosReinicio = await this.leer("votosReinicio", []);
+    const votos = await this.leer("votos", {});
+    const fichas = Object.values(plantel).map((j) => ({
+      id: j.id, nombre: j.nombre, avatar: j.avatar, color: j.color,
+    }));
+
+    this.enviar(ws, { tipo: "bienvenida", tuId: entrada.id });
+    this.enviar(ws, {
+      tipo: "reconexion",
+      fase,
+      rol,
+      palabra: rol === "investigador" ? undefined : await this.leer("palabra", null),
+      jugadores: fichas,
+      contactadoId: await this.contactadoId(),
+      restanteMs: Math.max(0, finFase - Date.now()),
+      historial: this.historial || [],
+      desconectados: fichas.map((f) => f.id).filter(
+        (id) => id !== entrada.id && !conectados.has(id)
+      ),
+      yaVotaste: Boolean(votos[entrada.id]),
+      emergenciaAgotada:
+        rol === "metamorfo" ? usos.interferencia
+        : rol === "contactado" ? usos.transmision
+        : usos.reinicio || votosReinicio.includes(entrada.id),
+    });
+
+    this.difundir({ tipo: "presencia", jugadorId: entrada.id, conectado: true }, ws);
+  }
+
+  // Si el Contactado o el Metamorfo no vuelven a tiempo, la partida
+  // se anula: sin ellos no hay transmisión que valga.
+  programarAnulacion(jugadorId) {
+    if (!this.anulaciones) this.anulaciones = new Map();
+    this.cancelarAnulacion(jugadorId);
+    const timer = setTimeout(async () => {
+      this.anulaciones.delete(jugadorId);
+      const fase = await this.fase();
+      if (fase !== "revelacion" && fase !== "partida") return;
+      const sigueAusente = !this.jugadores().some((j) => j.id === jugadorId);
+      if (sigueAusente) await this.anularPartida();
+    }, this.duraciones().anulacion);
+    this.anulaciones.set(jugadorId, timer);
+  }
+
+  cancelarAnulacion(jugadorId) {
+    const timer = this.anulaciones?.get(jugadorId);
+    if (timer) {
+      clearTimeout(timer);
+      this.anulaciones.delete(jugadorId);
+    }
+  }
+
+  async anularPartida() {
+    await this.ctx.storage.delete([
+      "palabra", "roles", "finFase", "votos",
+      "usos", "votosReinicio", "interferenciaHasta", "plantel",
+    ]);
+    await this.ctx.storage.deleteAlarm();
+    await this.cambiarFase("lobby");
+    this.historial = [];
+    this.confirmados = new Set();
+
+    this.difundir({
+      tipo: "faseCambio",
+      fase: "lobby",
+      aviso: "SEÑAL PERDIDA: UN OPERADOR CLAVE ABANDONÓ LA TRANSMISIÓN. LA PARTIDA SE ANULA.",
+    });
     await this.difundirLobby();
   }
 
@@ -290,11 +392,19 @@ export class Sala extends DurableObject {
     const lista = PALABRAS[dificultad];
     const palabra = lista[Math.floor(Math.random() * lista.length)];
 
+    // El plantel queda registrado para permitir reconexiones:
+    // mismo nombre + mismo código de sala = misma identidad.
+    const plantel = {};
+    for (const j of jugadores) {
+      plantel[j.id] = { id: j.id, nombre: j.nombre, avatar: j.avatar, color: j.color, orden: j.orden };
+    }
+
     const finFase = Date.now() + this.duraciones().revelacion;
     await this.ctx.storage.put({
       roles,
       palabra,
       finFase,
+      plantel,
       usos: { interferencia: false, transmision: false, reinicio: false },
       votosReinicio: [],
     });
@@ -680,7 +790,7 @@ export class Sala extends DurableObject {
 
     await this.ctx.storage.delete([
       "palabra", "roles", "finFase", "votos",
-      "usos", "votosReinicio", "interferenciaHasta",
+      "usos", "votosReinicio", "interferenciaHasta", "plantel",
     ]);
     await this.cambiarFase("lobby");
     this.historial = [];
@@ -715,11 +825,31 @@ export class Sala extends DurableObject {
     }
 
     const fase = await this.fase();
+    const yo = ws.deserializeAttachment();
+
     if (fase === "lobby") {
       await this.difundirLobby(ws);
+      return;
+    }
+
+    // En cualquier fase de juego: avisar quién se cayó (polaroid caída)
+    // y, si era un rol clave, arrancar la cuenta regresiva de anulación.
+    if (yo) {
+      this.difundir({ tipo: "presencia", jugadorId: yo.id, conectado: false }, ws);
+      const rol = await this.rolDe(yo.id);
+      if ((rol === "contactado" || rol === "metamorfo") &&
+          (fase === "revelacion" || fase === "partida")) {
+        this.programarAnulacion(yo.id);
+      }
+    }
+
+    if (fase === "revelacion") {
+      // Si todos los que quedan ya confirmaron, la partida arranca.
+      if (this.confirmados && this.confirmados.size >= this.jugadores(ws).length) {
+        await this.empezarPartida();
+      }
     } else if (fase === "partida") {
       // Borra la línea viva de quien se fue, si estaba tecleando.
-      const yo = ws.deserializeAttachment();
       if (yo) {
         this.difundir({ tipo: "tecleo", jugadorId: yo.id, texto: "" }, ws);
       }

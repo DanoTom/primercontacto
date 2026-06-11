@@ -72,12 +72,96 @@ const Sonido = (() => {
     nodoZumbido = null;
   }
 
+  // ─── La música del aparato ───
+  // Arpegio analógico hipnótico en La menor (con novena) alternando
+  // con Fa mayor séptima: clima ochentoso de sintetizador, original.
+  const PASO_MUSICA = 0.27; // corcheas a ~111 BPM
+  const ARPEGIO = [
+    110.0, 130.81, 164.81, 246.94, 329.63, 246.94, 164.81, 130.81, // Am(add9)
+    87.31, 110.0, 130.81, 196.0, 261.63, 196.0, 130.81, 110.0,     // Fmaj7
+  ];
+  const BAJOS = [55.0, 43.65]; // La1 y Fa1, uno por compás
+
+  let musicaDeseada = false;
+  let musica = null;
+
+  function notaMusica(frecuencia, t, duracion, destino) {
+    const osc = ctx.createOscillator();
+    osc.type = "sawtooth";
+    osc.frequency.value = frecuencia;
+    const filtro = ctx.createBiquadFilter();
+    filtro.type = "lowpass";
+    filtro.frequency.value = 780;
+    filtro.Q.value = 5;
+    const vol = ctx.createGain();
+    vol.gain.setValueAtTime(0, t);
+    vol.gain.linearRampToValueAtTime(0.075, t + 0.02);
+    vol.gain.exponentialRampToValueAtTime(0.001, t + duracion);
+    osc.connect(filtro).connect(vol).connect(destino);
+    osc.start(t);
+    osc.stop(t + duracion + 0.05);
+  }
+
+  function bajoMusica(frecuencia, t, duracion, destino) {
+    const osc = ctx.createOscillator();
+    osc.type = "triangle";
+    osc.frequency.value = frecuencia;
+    const vol = ctx.createGain();
+    vol.gain.setValueAtTime(0, t);
+    vol.gain.linearRampToValueAtTime(0.11, t + 0.06);
+    vol.gain.setValueAtTime(0.11, t + duracion - 0.3);
+    vol.gain.linearRampToValueAtTime(0, t + duracion);
+    osc.connect(vol).connect(destino);
+    osc.start(t);
+    osc.stop(t + duracion + 0.05);
+  }
+
+  function arrancarMusica() {
+    if (!ctx || musica) return;
+    const salida = ctx.createGain();
+    salida.gain.setValueAtTime(0, ctx.currentTime);
+    salida.gain.linearRampToValueAtTime(0.55, ctx.currentTime + 2.5);
+    salida.connect(ctx.destination);
+
+    const m = { salida, paso: 0, proximo: ctx.currentTime + 0.15, timer: null };
+    // Planificador con anticipación: agenda las notas que vienen.
+    m.timer = setInterval(() => {
+      while (m.proximo < ctx.currentTime + 0.45) {
+        const i = m.paso % ARPEGIO.length;
+        notaMusica(ARPEGIO[i], m.proximo, PASO_MUSICA * 0.95, salida);
+        if (i % 8 === 0) {
+          bajoMusica(BAJOS[(i / 8) | 0], m.proximo, PASO_MUSICA * 8, salida);
+        }
+        m.paso++;
+        m.proximo += PASO_MUSICA;
+      }
+    }, 120);
+    musica = m;
+  }
+
+  function pararMusica() {
+    if (!musica) return;
+    const m = musica;
+    musica = null;
+    clearInterval(m.timer);
+    try {
+      m.salida.gain.linearRampToValueAtTime(0, ctx.currentTime + 0.8);
+      setTimeout(() => m.salida.disconnect(), 1000);
+    } catch {}
+  }
+
+  function evaluarMusica() {
+    if (activo && musicaDeseada) arrancarMusica();
+    else pararMusica();
+  }
+
   function encender() {
     deseo = true;
     activo = true;
     localStorage.setItem("pc-audio", "1");
     asegurarContexto();
     arrancarZumbido();
+    evaluarMusica();
   }
 
   function apagar() {
@@ -85,6 +169,7 @@ const Sonido = (() => {
     activo = false;
     localStorage.setItem("pc-audio", "0");
     pararZumbido();
+    pararMusica();
   }
 
   // Si el jugador ya había encendido el audio en otra visita,
@@ -105,6 +190,12 @@ const Sonido = (() => {
     },
     estaActivo: () => activo,
     quiereAudio: () => deseo,
+
+    // La pantalla actual pide (o no) música de fondo.
+    musica(deseada) {
+      musicaDeseada = deseada;
+      evaluarMusica();
+    },
 
     // El vocabulario del aparato:
     click() {
