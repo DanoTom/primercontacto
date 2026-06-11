@@ -1,0 +1,184 @@
+/* Estilo funcional de las etapas 1–4.
+   La dirección de arte completa (aparato, CRT, polaroids) llega en la Etapa 5. */
+
+* { box-sizing: border-box; }
+
+body {
+  font-family: monospace;
+  background: #0a120c;
+  color: #33ff66;
+  margin: 0;
+  min-height: 100vh;
+}
+
+.pantalla {
+  display: none;
+  flex-direction: column;
+  gap: 14px;
+  padding: 24px 16px;
+  max-width: 480px;
+  margin: 0 auto;
+}
+
+.pantalla.activa { display: flex; }
+
+h1 { font-size: 20px; margin: 0; text-align: center; }
+
+.subtitulo {
+  font-size: 13px;
+  text-align: center;
+  margin: 0;
+  opacity: 0.7;
+  letter-spacing: 1px;
+}
+
+label { font-size: 13px; letter-spacing: 1px; opacity: 0.8; }
+
+input {
+  font-family: monospace;
+  font-size: 16px;
+  padding: 12px;
+  background: #101c12;
+  color: #33ff66;
+  border: 1px solid #2a4a30;
+  width: 100%;
+  min-height: 44px;
+}
+
+input:focus, button:focus-visible {
+  outline: 2px solid #ffb000;
+  outline-offset: 2px;
+}
+
+button {
+  font-family: monospace;
+  font-size: 16px;
+  padding: 12px 20px;
+  background: #1a2a1c;
+  color: #33ff66;
+  border: 1px solid #33ff66;
+  cursor: pointer;
+  min-height: 44px;
+  width: 100%;
+}
+
+button.principal {
+  background: #33ff66;
+  color: #0a120c;
+  font-weight: bold;
+}
+
+button:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.acciones { display: flex; flex-direction: column; gap: 10px; margin-top: 8px; }
+
+.separador { text-align: center; font-size: 12px; opacity: 0.5; }
+
+.campo-codigo {
+  text-align: center;
+  letter-spacing: 8px;
+  text-transform: uppercase;
+  font-size: 22px;
+}
+
+.mensaje {
+  color: #ffb000;
+  font-size: 14px;
+  min-height: 20px;
+  text-align: center;
+  white-space: pre-wrap;
+}
+
+/* Avatares (placeholders hasta la Etapa 5) */
+#grilla-avatares {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 8px;
+}
+
+.avatar {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 8px 2px;
+  background: #101c12;
+  border: 1px solid #2a4a30;
+  cursor: pointer;
+  min-height: 44px;
+}
+
+.avatar .cara {
+  width: 40px;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 15px;
+  font-weight: bold;
+  color: #0a120c;
+}
+
+.avatar .rotulo {
+  font-size: 9px;
+  text-align: center;
+  line-height: 1.2;
+}
+
+.avatar.elegido {
+  border-color: #ffb000;
+  background: #2a2410;
+}
+
+/* Lobby */
+.codigo-grande {
+  font-size: 44px;
+  text-align: center;
+  letter-spacing: 12px;
+  color: #ffb000;
+  padding-left: 12px; /* compensa el letter-spacing del último carácter */
+}
+
+.conteo { text-align: center; font-size: 14px; letter-spacing: 1px; }
+
+#lista-jugadores {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+#lista-jugadores li {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px;
+  background: #101c12;
+  border: 1px solid #2a4a30;
+}
+
+#lista-jugadores .cara {
+  width: 32px;
+  height: 32px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  font-weight: bold;
+  color: #0a120c;
+}
+
+#lista-jugadores .etiqueta-jefe {
+  margin-left: auto;
+  font-size: 10px;
+  color: #ffb000;
+  border: 1px solid #ffb000;
+  padding: 2px 6px;
+  white-space: nowrap;
+}

@@ -3,75 +3,55 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>PRIMER CONTACTO — Prueba de señal</title>
-  <style>
-    /* Estilo mínimo de prueba. La estética real llega en la Etapa 5. */
-    body {
-      font-family: monospace;
-      background: #0a120c;
-      color: #33ff66;
-      margin: 0;
-      padding: 24px;
-      display: flex;
-      flex-direction: column;
-      gap: 16px;
-      align-items: flex-start;
-    }
-    h1 { font-size: 18px; margin: 0; }
-    button {
-      font-family: monospace;
-      font-size: 16px;
-      padding: 12px 20px;
-      background: #1a2a1c;
-      color: #33ff66;
-      border: 1px solid #33ff66;
-      cursor: pointer;
-      min-height: 44px;
-    }
-    #registro {
-      white-space: pre-wrap;
-      font-size: 14px;
-      max-width: 100%;
-    }
-  </style>
+  <title>PRIMER CONTACTO</title>
+  <link rel="stylesheet" href="estilo.css">
 </head>
 <body>
-  <h1>:: PRIMER CONTACTO — PRUEBA DE SEÑAL ::</h1>
-  <div id="estado">CONECTANDO...</div>
-  <div id="conteo"></div>
-  <button id="ping">EMITIR PING</button>
-  <div id="registro"></div>
 
-  <script>
-    // Etapa 0: todas las pestañas se conectan a la sala fija "HOLA"
-    // para comprobar que se ven entre sí en tiempo real.
-    const protocolo = location.protocol === "https:" ? "wss" : "ws";
-    const ws = new WebSocket(`${protocolo}://${location.host}/api/sala/HOLA/ws`);
+  <!-- ═══ PANTALLA: INICIO ═══ -->
+  <section id="pantalla-inicio" class="pantalla activa">
+    <h1>:: PRIMER CONTACTO ::</h1>
+    <p class="subtitulo">ESTACIÓN DE INTERCEPCIÓN DE SEÑALES</p>
 
-    const $ = (id) => document.getElementById(id);
+    <label for="campo-nombre">IDENTIFICACIÓN DEL OPERADOR</label>
+    <input id="campo-nombre" type="text" maxlength="12" autocomplete="off"
+           placeholder="TU NOMBRE (MÁX. 12)">
 
-    ws.onopen = () => {
-      $("estado").textContent = "SEÑAL ESTABLECIDA";
-    };
+    <label>FICHA DEL PERSONAL</label>
+    <div id="grilla-avatares"></div>
 
-    ws.onclose = () => {
-      $("estado").textContent = "SEÑAL PERDIDA. RECARGÁ LA PÁGINA.";
-    };
+    <div class="acciones">
+      <button id="boton-crear" class="principal">CREAR SALA</button>
+      <div class="separador">— O —</div>
+      <input id="campo-codigo" type="text" maxlength="4" autocomplete="off"
+             placeholder="CÓDIGO" class="campo-codigo">
+      <button id="boton-unirse">UNIRSE A SALA</button>
+    </div>
 
-    ws.onmessage = (evento) => {
-      const msg = JSON.parse(evento.data);
-      if (msg.tipo === "conteo") {
-        $("conteo").textContent = `DISPOSITIVOS EN LA SALA: ${msg.conectados}`;
-      }
-      if (msg.tipo === "ping") {
-        $("registro").textContent =
-          `> PING RECIBIDO [${msg.hora}]\n` + $("registro").textContent;
-      }
-    };
+    <div id="mensaje-inicio" class="mensaje" role="alert"></div>
+  </section>
 
-    $("ping").onclick = () => {
-      ws.send(JSON.stringify({ tipo: "ping" }));
-    };
-  </script>
+  <!-- ═══ PANTALLA: LOBBY ═══ -->
+  <section id="pantalla-lobby" class="pantalla">
+    <h1>:: SALA DE OPERACIONES ::</h1>
+    <p class="subtitulo">CÓDIGO DE ACCESO</p>
+    <div id="codigo-sala" class="codigo-grande"></div>
+    <p class="subtitulo">COMPARTILO CON TU EQUIPO</p>
+
+    <div id="conteo-lobby" class="conteo"></div>
+    <ul id="lista-jugadores"></ul>
+
+    <button id="boton-iniciar" class="principal" hidden>INICIAR TRANSMISIÓN</button>
+    <div id="nota-iniciar" class="mensaje"></div>
+  </section>
+
+  <!-- ═══ PANTALLA: PARTIDA (placeholder hasta la Etapa 3) ═══ -->
+  <section id="pantalla-partida" class="pantalla">
+    <h1>:: TRANSMISIÓN INICIADA ::</h1>
+    <p class="subtitulo">LA TERMINAL SE CONSTRUYE EN LA PRÓXIMA ETAPA</p>
+  </section>
+
+  <script src="avatares.js"></script>
+  <script src="app.js"></script>
 </body>
 </html>
