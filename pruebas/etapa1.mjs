@@ -79,10 +79,10 @@ const noveno = clienteNuevo(codigo, "Noveno");
 await espera(500);
 ok(ultimo(noveno, "error")?.mensaje.includes("COMPLETA"), "el 9° jugador es rechazado");
 
-// 8. El creador inicia con 8
+// 8. El creador inicia con 8 (desde la Etapa 3, iniciar lleva a la revelación de roles)
 ana.ws.send(JSON.stringify({ tipo: "iniciar" }));
 await espera(500);
-ok(ultimo(dani, "faseCambio")?.fase === "partida", "todos reciben el cambio a fase partida");
+ok(!!ultimo(dani, "rol"), "todos reciben su rol al iniciar");
 
 // 9. Nadie puede entrar con la partida en curso
 const tarde = clienteNuevo(codigo, "Tarde");

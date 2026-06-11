@@ -41,21 +41,81 @@
     <div id="conteo-lobby" class="conteo"></div>
     <ul id="lista-jugadores"></ul>
 
+    <label>DIFICULTAD DE LA TRANSMISIÓN</label>
+    <div id="selector-dificultad">
+      <button data-dif="facil">FÁCIL</button>
+      <button data-dif="media" class="elegido">MEDIA</button>
+      <button data-dif="dificil">DIFÍCIL</button>
+    </div>
+
     <button id="boton-iniciar" class="principal" hidden>INICIAR TRANSMISIÓN</button>
     <div id="nota-iniciar" class="mensaje"></div>
   </section>
 
+  <!-- ═══ PANTALLA: REVELACIÓN DE ROL ═══ -->
+  <section id="pantalla-revelacion" class="pantalla">
+    <h1>:: TRANSMISIÓN ENTRANTE ::</h1>
+    <p class="subtitulo">⚠ ASEGURATE DE QUE NADIE MIRE TU PANTALLA ⚠</p>
+
+    <div id="tarjeta-rol">
+      <div id="rol-titulo"></div>
+      <p id="rol-descripcion"></p>
+      <div id="rol-palabra" hidden>
+        <p class="subtitulo">PALABRA INTERCEPTADA</p>
+        <div id="palabra-secreta"></div>
+      </div>
+    </div>
+
+    <button id="boton-entendido" class="principal">ENTENDIDO</button>
+    <div id="conteo-confirmados" class="mensaje"></div>
+  </section>
+
   <!-- ═══ PANTALLA: PARTIDA ═══ -->
   <section id="pantalla-partida" class="pantalla">
+    <div id="banda-superior">
+      <div id="reloj">05:00</div>
+      <div id="indicador-senal">SEÑAL ACTIVA</div>
+    </div>
+
     <div id="terminal" aria-live="polite">
       <div id="historial"></div>
       <div id="lineas-vivas"></div>
     </div>
+
     <form id="form-mensaje" autocomplete="off">
       <input id="campo-mensaje" type="text" maxlength="200"
              placeholder="ESCRIBÍ EN LA TERMINAL..." autocomplete="off">
       <button type="submit" id="boton-transmitir">TX</button>
     </form>
+
+    <div id="panel-contactado" hidden>
+      <p class="subtitulo">RESPONDÉ A LA TERMINAL</p>
+      <div id="botones-respuesta">
+        <button data-valor="si" class="respuesta">SÍ</button>
+        <button data-valor="no" class="respuesta">NO</button>
+        <button data-valor="inestable" class="respuesta">SEÑAL INESTABLE</button>
+        <button data-valor="fuerte" class="respuesta">SEÑAL FUERTE</button>
+        <button data-valor="debil" class="respuesta">SEÑAL DÉBIL</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- ═══ PANTALLA: JUICIO FINAL ═══ -->
+  <section id="pantalla-juicio" class="pantalla">
+    <h1>:: JUICIO FINAL ::</h1>
+    <p class="subtitulo">SE PERDIÓ LA SEÑAL. ¿QUIÉN ES EL METAMORFO?</p>
+    <div id="reloj-juicio" class="codigo-grande"></div>
+    <div id="lista-sospechosos"></div>
+    <div id="estado-votos" class="mensaje"></div>
+  </section>
+
+  <!-- ═══ PANTALLA: RESULTADO ═══ -->
+  <section id="pantalla-final" class="pantalla">
+    <h1 id="titulo-final"></h1>
+    <p id="detalle-final" class="subtitulo"></p>
+    <div id="revelacion-final"></div>
+    <ul id="recuento-votos"></ul>
+    <button id="boton-revancha" class="principal">JUGAR DE NUEVO</button>
   </section>
 
   <script src="avatares.js"></script>

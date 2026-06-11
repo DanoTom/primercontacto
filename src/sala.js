@@ -1,16 +1,16 @@
 // La Sala: un Durable Object por cada sala de juego.
-// Todo el estado de la partida vive acá, en memoria del objeto.
+// Todo el estado de la partida vive acá. El servidor es la autoridad:
+// el reloj, los roles, la palabra y la validación se deciden acá;
+// los clientes solo muestran estado y envían intenciones.
 //
-// Etapa 2: la Terminal en vivo. La sala retransmite el tecleo de
-// cada jugador (borradores, con borrones) y los mensajes enviados,
-// con un color de fósforo propio por jugador.
-//
-// Nota sobre hibernación: la sala puede "dormirse" entre mensajes
-// para no gastar el plan gratuito. Por eso los datos de cada jugador
-// se guardan adheridos a su conexión (serializeAttachment), que
-// sobrevive la hibernación, y la fase de la partida en storage.
+// Fases: lobby → revelacion → partida → juicio → final → (revancha) lobby
+// El reloj de cada fase se hace cumplir con una alarma del Durable
+// Object (sobrevive hibernaciones). Lo crítico (fase, roles, palabra,
+// vencimiento, votos) se persiste en storage por la misma razón;
+// el historial y los borradores son efímeros y viven en memoria.
 
 import { DurableObject } from "cloudflare:workers";
+import { PALABRAS } from "./palabras.js";
 
 const MAX_JUGADORES = 8;
 const MIN_JUGADORES = 4;
@@ -19,8 +19,48 @@ const CANT_AVATARES = 8;
 const CANT_COLORES = 8;
 const MAX_MENSAJE = 200;
 const MAX_HISTORIAL = 200;
+const PAUSA_RESPUESTA = 1500; // freno anti-spam de los botones del Contactado
+
+const DIFICULTADES = ["facil", "media", "dificil"];
+
+const RESPUESTAS = {
+  si: "SÍ",
+  no: "NO",
+  inestable: "SEÑAL INESTABLE",
+  fuerte: "SEÑAL FUERTE",
+  debil: "SEÑAL DÉBIL",
+};
+
+// Insensible a mayúsculas y tildes ("colibri" vale por "colibrí"),
+// pero la ñ se preserva (campana ≠ campaña): se aparta con un
+// marcador antes de quitar los acentos y se restituye después.
+function normalizar(texto) {
+  return texto
+    .toLowerCase()
+    .replaceAll("\u00f1", "\u0001")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replaceAll("\u0001", "\u00f1");
+}
+
+function barajar(lista) {
+  for (let i = lista.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [lista[i], lista[j]] = [lista[j], lista[i]];
+  }
+  return lista;
+}
 
 export class Sala extends DurableObject {
+  // Con MODO_PRUEBA las fases duran segundos en vez de minutos,
+  // para que las pruebas automáticas no esperen 5 minutos reales.
+  duraciones() {
+    if (this.env.MODO_PRUEBA === "1") {
+      return { revelacion: 2500, partida: 8000, juicio: 3000 };
+    }
+    return { revelacion: 30_000, partida: 300_000, juicio: 60_000 };
+  }
+
   async fetch(request) {
     const url = new URL(request.url);
 
@@ -43,11 +83,16 @@ export class Sala extends DurableObject {
     return Response.json({ ok: true, mensaje: "SALA ACTIVA" });
   }
 
-  // La fase se cachea en memoria: el tecleo llega cada ~100 ms
-  // y no queremos consultar el storage en cada ráfaga.
+  // ─── Estado básico ───
+
+  async leer(clave, defecto) {
+    const valor = await this.ctx.storage.get(clave);
+    return valor === undefined ? defecto : valor;
+  }
+
   async fase() {
     if (this._fase === undefined) {
-      this._fase = (await this.ctx.storage.get("fase")) || "lobby";
+      this._fase = await this.leer("fase", "lobby");
     }
     return this._fase;
   }
@@ -57,10 +102,6 @@ export class Sala extends DurableObject {
     await this.ctx.storage.put("fase", fase);
   }
 
-  // Reconstruye la lista de jugadores desde las conexiones vivas.
-  // El orden de llegada define quién es el creador (el primero).
-  // "excluir" permite omitir una conexión que se está cerrando
-  // (todavía figura en la lista durante el aviso de cierre).
   jugadores(excluir = null) {
     const lista = [];
     for (const ws of this.ctx.getWebSockets()) {
@@ -71,6 +112,38 @@ export class Sala extends DurableObject {
     lista.sort((a, b) => a.orden - b.orden || (a.id < b.id ? -1 : 1));
     return lista;
   }
+
+  fichas() {
+    return this.jugadores().map((j) => ({
+      id: j.id,
+      nombre: j.nombre,
+      avatar: j.avatar,
+      color: j.color,
+    }));
+  }
+
+  async rolDe(jugadorId) {
+    const roles = await this.leer("roles", {});
+    return roles[jugadorId];
+  }
+
+  async contactadoId() {
+    const roles = await this.leer("roles", {});
+    for (const [id, rol] of Object.entries(roles)) {
+      if (rol === "contactado") return id;
+    }
+    return null;
+  }
+
+  async metamorfoId() {
+    const roles = await this.leer("roles", {});
+    for (const [id, rol] of Object.entries(roles)) {
+      if (rol === "metamorfo") return id;
+    }
+    return null;
+  }
+
+  // ─── Mensajes entrantes ───
 
   async webSocketMessage(ws, dato) {
     let msg;
@@ -84,8 +157,14 @@ export class Sala extends DurableObject {
       case "unirse":
         await this.manejarUnirse(ws, msg);
         break;
+      case "dificultad":
+        await this.manejarDificultad(ws, msg);
+        break;
       case "iniciar":
         await this.manejarIniciar(ws);
+        break;
+      case "entendido":
+        await this.manejarEntendido(ws);
         break;
       case "tecleo":
         await this.manejarTecleo(ws, msg);
@@ -93,8 +172,19 @@ export class Sala extends DurableObject {
       case "enviar":
         await this.manejarEnviar(ws, msg);
         break;
+      case "respuesta":
+        await this.manejarRespuesta(ws, msg);
+        break;
+      case "votar":
+        await this.manejarVotar(ws, msg);
+        break;
+      case "revancha":
+        await this.manejarRevancha(ws);
+        break;
     }
   }
+
+  // ─── Lobby ───
 
   async manejarUnirse(ws, msg) {
     if (ws.deserializeAttachment()) return; // ya está unido
@@ -123,28 +213,32 @@ export class Sala extends DurableObject {
       ? msg.avatar
       : 0;
 
-    // El contador de orden persiste para que el creador siga siendo
-    // el primero aunque la sala hiberne.
-    const orden = (await this.ctx.storage.get("orden")) || 0;
-    await this.ctx.storage.put("orden", orden + 1);
-
-    // Color de fósforo: el más bajo que no esté usando nadie,
-    // así nunca hay dos jugadores activos con el mismo.
+    // Color de fósforo: el más bajo que no esté usando nadie.
     const usados = new Set(jugadores.map((j) => j.color));
     let color = 0;
     while (usados.has(color) && color < CANT_COLORES - 1) color++;
 
-    const jugador = {
-      id: crypto.randomUUID(),
-      nombre,
-      avatar,
-      color,
-      orden,
-    };
+    // El contador de orden persiste para que el creador siga siendo
+    // el primero aunque la sala hiberne.
+    const orden = await this.leer("orden", 0);
+    await this.ctx.storage.put("orden", orden + 1);
+
+    const jugador = { id: crypto.randomUUID(), nombre, avatar, color, orden };
     ws.serializeAttachment(jugador);
 
     this.enviar(ws, { tipo: "bienvenida", tuId: jugador.id });
-    this.difundirLobby();
+    await this.difundirLobby();
+  }
+
+  async manejarDificultad(ws, msg) {
+    const yo = ws.deserializeAttachment();
+    if (!yo) return;
+    if ((await this.fase()) !== "lobby") return;
+    if (this.jugadores()[0]?.id !== yo.id) return; // solo el creador
+    if (!DIFICULTADES.includes(msg.valor)) return;
+
+    await this.ctx.storage.put("dificultad", msg.valor);
+    await this.difundirLobby();
   }
 
   async manejarIniciar(ws) {
@@ -166,42 +260,91 @@ export class Sala extends DurableObject {
       });
     }
 
+    // Roles al azar: 1 contactado, 1 metamorfo, el resto investigadores.
+    const ids = barajar(jugadores.map((j) => j.id));
+    const roles = {};
+    ids.forEach((id, i) => {
+      roles[id] = i === 0 ? "contactado" : i === 1 ? "metamorfo" : "investigador";
+    });
+
+    const dificultad = await this.leer("dificultad", "media");
+    const lista = PALABRAS[dificultad];
+    const palabra = lista[Math.floor(Math.random() * lista.length)];
+
+    const finFase = Date.now() + this.duraciones().revelacion;
+    await this.ctx.storage.put({ roles, palabra, finFase });
+    await this.cambiarFase("revelacion");
+    await this.ctx.storage.setAlarm(finFase);
+    this.confirmados = new Set();
+    this.historial = [];
+
+    // Revelación privada: la palabra solo viaja a quien debe conocerla.
+    const fichas = this.fichas();
+    for (const socket of this.ctx.getWebSockets()) {
+      const j = socket.deserializeAttachment();
+      if (!j) continue;
+      const rol = roles[j.id];
+      this.enviar(socket, {
+        tipo: "rol",
+        rol,
+        palabra: rol === "investigador" ? undefined : palabra,
+        jugadores: fichas,
+        contactadoId: ids[0],
+      });
+    }
+  }
+
+  async manejarEntendido(ws) {
+    const yo = ws.deserializeAttachment();
+    if (!yo) return;
+    if ((await this.fase()) !== "revelacion") return;
+
+    if (!this.confirmados) this.confirmados = new Set();
+    this.confirmados.add(yo.id);
+
+    const total = this.jugadores().length;
+    this.difundir({ tipo: "confirmados", cantidad: this.confirmados.size, total });
+
+    if (this.confirmados.size >= total) {
+      await this.empezarPartida();
+    }
+  }
+
+  async empezarPartida() {
+    if ((await this.fase()) !== "revelacion") return;
+
+    const duracion = this.duraciones().partida;
+    const finFase = Date.now() + duracion;
+    await this.ctx.storage.put("finFase", finFase);
     await this.cambiarFase("partida");
+    await this.ctx.storage.setAlarm(finFase);
+
     this.difundir({
       tipo: "faseCambio",
       fase: "partida",
+      restanteMs: duracion,
       jugadores: this.fichas(),
+      contactadoId: await this.contactadoId(),
     });
-  }
-
-  // Datos públicos de los jugadores (sin el orden interno).
-  fichas() {
-    return this.jugadores().map((j) => ({
-      id: j.id,
-      nombre: j.nombre,
-      avatar: j.avatar,
-      color: j.color,
-    }));
   }
 
   // ─── La Terminal ───
 
-  // Borrador en curso: se retransmite a todos menos a quien teclea
-  // (que ya ve su propio texto en el campo de entrada).
   async manejarTecleo(ws, msg) {
     const yo = ws.deserializeAttachment();
     if (!yo) return;
     if ((await this.fase()) !== "partida") return;
+    if ((await this.rolDe(yo.id)) === "contactado") return; // no tiene teclado
 
     const texto = String(msg.texto ?? "").slice(0, MAX_MENSAJE);
     this.difundir({ tipo: "tecleo", jugadorId: yo.id, texto }, ws);
   }
 
-  // Mensaje enviado (Enter): pasa al historial y se difunde a todos.
   async manejarEnviar(ws, msg) {
     const yo = ws.deserializeAttachment();
     if (!yo) return;
     if ((await this.fase()) !== "partida") return;
+    if ((await this.rolDe(yo.id)) === "contactado") return;
 
     const texto = String(msg.texto ?? "").trim().slice(0, MAX_MENSAJE);
     if (!texto) return;
@@ -216,9 +359,170 @@ export class Sala extends DurableObject {
     if (!this.historial) this.historial = [];
     this.historial.push(mensaje);
     if (this.historial.length > MAX_HISTORIAL) this.historial.shift();
-
     this.difundir(mensaje);
+
+    // Victoria por descifrado: la palabra apareció en un mensaje
+    // enviado (de quien sea: si la escribe el Metamorfo, es su riesgo).
+    const palabra = await this.leer("palabra", null);
+    if (palabra && this.contieneLaPalabra(texto, palabra)) {
+      await this.finalizar("humanos", "descifrado");
+    }
   }
+
+  // La palabra cuenta como palabra entera del mensaje, normalizada:
+  // "Es un COLIBRI?" descubre "colibrí", pero "faraón" no descubre "faro".
+  contieneLaPalabra(texto, palabra) {
+    const objetivo = normalizar(palabra);
+    return normalizar(texto)
+      .split(/[^a-zñ0-9]+/)
+      .includes(objetivo);
+  }
+
+  async manejarRespuesta(ws, msg) {
+    const yo = ws.deserializeAttachment();
+    if (!yo) return;
+    if ((await this.fase()) !== "partida") return;
+    if ((await this.rolDe(yo.id)) !== "contactado") return;
+    if (!RESPUESTAS[msg.valor]) return;
+
+    const ahora = Date.now();
+    if (this.ultimaRespuesta && ahora - this.ultimaRespuesta < PAUSA_RESPUESTA) return;
+    this.ultimaRespuesta = ahora;
+
+    this.sistema(`EL CONTACTADO RESPONDE: ${RESPUESTAS[msg.valor]}`, msg.valor);
+  }
+
+  sistema(texto, subtipo = null) {
+    const msg = { tipo: "sistema", subtipo, texto };
+    if (!this.historial) this.historial = [];
+    this.historial.push(msg);
+    if (this.historial.length > MAX_HISTORIAL) this.historial.shift();
+    this.difundir(msg);
+  }
+
+  // ─── El reloj de la sala (alarma del Durable Object) ───
+
+  async alarm() {
+    const fase = await this.fase();
+    if (fase === "revelacion") {
+      await this.empezarPartida();
+    } else if (fase === "partida") {
+      await this.empezarJuicio();
+    } else if (fase === "juicio") {
+      await this.resolverJuicio();
+    }
+  }
+
+  // ─── El Juicio Final ───
+
+  async empezarJuicio() {
+    if ((await this.fase()) !== "partida") return;
+
+    const duracion = this.duraciones().juicio;
+    const finFase = Date.now() + duracion;
+    await this.ctx.storage.put({ finFase, votos: {} });
+    await this.cambiarFase("juicio");
+    await this.ctx.storage.setAlarm(finFase);
+
+    this.difundir({
+      tipo: "faseCambio",
+      fase: "juicio",
+      restanteMs: duracion,
+      contactadoId: await this.contactadoId(),
+    });
+  }
+
+  async manejarVotar(ws, msg) {
+    const yo = ws.deserializeAttachment();
+    if (!yo) return;
+    if ((await this.fase()) !== "juicio") return;
+
+    const objetivoId = String(msg.objetivoId || "");
+    const roles = await this.leer("roles", {});
+    if (!roles[objetivoId]) return; // no es un jugador de esta partida
+    if (roles[objetivoId] === "contactado") {
+      return this.enviar(ws, {
+        tipo: "error",
+        mensaje: "NO PODÉS VOTAR AL CONTACTADO: SU ROL ES PÚBLICO.",
+      });
+    }
+
+    const votos = await this.leer("votos", {});
+    if (votos[yo.id]) return; // el voto es uno solo y queda sellado
+    votos[yo.id] = objetivoId;
+    await this.ctx.storage.put("votos", votos);
+
+    this.enviar(ws, { tipo: "votoRegistrado" });
+    const total = this.jugadores().length;
+    this.difundir({ tipo: "votos", cantidad: Object.keys(votos).length, total });
+
+    if (Object.keys(votos).length >= total) {
+      await this.resolverJuicio();
+    }
+  }
+
+  async resolverJuicio() {
+    if ((await this.fase()) !== "juicio") return;
+
+    const votos = await this.leer("votos", {});
+    const metamorfoId = await this.metamorfoId();
+
+    const conteo = {};
+    for (const objetivoId of Object.values(votos)) {
+      conteo[objetivoId] = (conteo[objetivoId] || 0) + 1;
+    }
+    const entradas = Object.entries(conteo).sort((a, b) => b[1] - a[1]);
+
+    // Gana el equipo humano solo si el más votado es el Metamorfo,
+    // sin empate en el primer puesto. Abstenciones no suman.
+    let ganador = "metamorfo";
+    if (entradas.length > 0) {
+      const [topId, topVotos] = entradas[0];
+      const empate = entradas.length > 1 && entradas[1][1] === topVotos;
+      if (!empate && topId === metamorfoId) ganador = "humanos";
+    }
+
+    await this.finalizar(ganador, "votacion", {
+      recuento: entradas.map(([id, cantidad]) => ({ id, votos: cantidad })),
+    });
+  }
+
+  // ─── Final y revancha ───
+
+  async finalizar(ganador, motivo, extra = {}) {
+    await this.cambiarFase("final");
+    await this.ctx.storage.deleteAlarm();
+
+    this.difundir({
+      tipo: "faseCambio",
+      fase: "final",
+      resultado: {
+        ganador,
+        motivo,
+        palabra: await this.leer("palabra", null),
+        metamorfoId: await this.metamorfoId(),
+        contactadoId: await this.contactadoId(),
+        ...extra,
+      },
+    });
+  }
+
+  async manejarRevancha(ws) {
+    const yo = ws.deserializeAttachment();
+    if (!yo) return;
+    if ((await this.fase()) !== "final") return;
+
+    await this.ctx.storage.delete(["palabra", "roles", "finFase", "votos"]);
+    await this.cambiarFase("lobby");
+    this.historial = [];
+    this.confirmados = new Set();
+    this.ultimaRespuesta = 0;
+
+    this.difundir({ tipo: "faseCambio", fase: "lobby" });
+    await this.difundirLobby();
+  }
+
+  // ─── Desconexiones ───
 
   async webSocketClose(ws) {
     await this.manejarDesconexion(ws);
@@ -234,27 +538,39 @@ export class Sala extends DurableObject {
     // la próxima vez que alguien use este código, arranca de cero).
     if (restantes.length === 0) {
       await this.ctx.storage.deleteAll();
+      await this.ctx.storage.deleteAlarm();
       this._fase = undefined;
       this.historial = [];
+      this.confirmados = new Set();
       return;
     }
+
     const fase = await this.fase();
     if (fase === "lobby") {
-      this.difundirLobby(ws);
+      await this.difundirLobby(ws);
     } else if (fase === "partida") {
       // Borra la línea viva de quien se fue, si estaba tecleando.
       const yo = ws.deserializeAttachment();
       if (yo) {
         this.difundir({ tipo: "tecleo", jugadorId: yo.id, texto: "" }, ws);
       }
+    } else if (fase === "juicio") {
+      // Si los que quedan ya votaron todos, no hay que esperar más.
+      const votos = await this.leer("votos", {});
+      if (Object.keys(votos).length >= this.jugadores(ws).length) {
+        await this.resolverJuicio();
+      }
     }
   }
 
-  difundirLobby(excluir = null) {
+  // ─── Difusión ───
+
+  async difundirLobby(excluir = null) {
     const jugadores = this.jugadores(excluir);
     this.difundir({
       tipo: "lobby",
       creadorId: jugadores.length ? jugadores[0].id : null,
+      dificultad: await this.leer("dificultad", "media"),
       jugadores: jugadores.map((j) => ({
         id: j.id,
         nombre: j.nombre,

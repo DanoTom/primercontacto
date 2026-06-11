@@ -1,4 +1,4 @@
-// Lógica del cliente: pantallas, conexión y lobby.
+// Lógica del cliente: pantallas, conexión y juego.
 // El servidor es la autoridad; acá solo se muestra estado
 // y se envían intenciones.
 
@@ -12,6 +12,34 @@ const estado = {
   fase: "inicio",
   jugadores: {}, // id → { nombre, avatar, color }
   vivos: {}, // id → texto que está tecleando ahora
+  miRol: null,
+  contactadoId: null,
+  soyCreador: false,
+  relojTecleo: null,
+  relojPantalla: null,
+};
+
+const ROLES = {
+  investigador: {
+    titulo: "INVESTIGADOR",
+    descripcion:
+      "NO CONOCÉS LA PALABRA. INTERROGÁ AL CONTACTADO POR LA TERMINAL " +
+      "Y DESCIFRALA ANTES DE QUE SE PIERDA LA SEÑAL. DESCONFIÁ: HAY UN " +
+      "METAMORFO ENTRE USTEDES.",
+  },
+  contactado: {
+    titulo: "CONTACTADO",
+    descripcion:
+      "CONOCÉS LA PALABRA, PERO NO TENÉS TECLADO. RESPONDÉ A LAS " +
+      "PREGUNTAS DE LA TERMINAL SOLO CON TUS 5 BOTONES.",
+  },
+  metamorfo: {
+    titulo: "METAMORFO",
+    descripcion:
+      "CONOCÉS LA PALABRA. FINGÍ SER UN INVESTIGADOR Y QUEMÁ EL RELOJ " +
+      "CON PREGUNTAS INÚTILES. CUIDADO: TODOS VEN LO QUE TECLEÁS. " +
+      "JAMÁS ESCRIBAS LA PALABRA, NI EN BORRADOR.",
+  },
 };
 
 // ─── Pantallas ───
@@ -87,12 +115,21 @@ function manejarMensaje(msg) {
       dibujarLobby(msg);
       break;
 
+    case "rol":
+      registrarJugadores(msg.jugadores);
+      estado.miRol = msg.rol;
+      estado.contactadoId = msg.contactadoId;
+      dibujarRevelacion(msg);
+      mostrarPantalla("revelacion");
+      break;
+
+    case "confirmados":
+      $("conteo-confirmados").textContent =
+        `CONFIRMADOS: ${msg.cantidad}/${msg.total}`;
+      break;
+
     case "faseCambio":
-      if (msg.fase === "partida") {
-        registrarJugadores(msg.jugadores);
-        iniciarTerminal();
-        mostrarPantalla("partida");
-      }
+      manejarFaseCambio(msg);
       break;
 
     case "tecleo":
@@ -105,19 +142,59 @@ function manejarMensaje(msg) {
       break;
 
     case "mensaje":
-      // El mensaje enviado reemplaza la línea viva de ese jugador.
       delete estado.vivos[msg.jugadorId];
       dibujarLineasVivas();
       agregarAlHistorial(msg);
       break;
 
-    case "error":
-      if (estado.fase === "inicio") {
-        avisar(msg.mensaje);
-      } else {
-        $("nota-iniciar").textContent = msg.mensaje;
-      }
+    case "sistema":
+      agregarLineaSistema(msg.texto);
       break;
+
+    case "votoRegistrado":
+      $("estado-votos").textContent = "VOTO REGISTRADO. ESPERANDO AL RESTO...";
+      break;
+
+    case "votos":
+      $("estado-votos").textContent =
+        `VOTOS EMITIDOS: ${msg.cantidad}/${msg.total}` +
+        (yaVote() ? " — TU VOTO ESTÁ SELLADO." : "");
+      break;
+
+    case "reloj":
+      iniciarReloj(msg.restanteMs, "reloj");
+      break;
+
+    case "error":
+      mostrarError(msg.mensaje);
+      break;
+  }
+}
+
+function mostrarError(mensaje) {
+  if (estado.fase === "inicio") avisar(mensaje);
+  else if (estado.fase === "lobby") $("nota-iniciar").textContent = mensaje;
+  else if (estado.fase === "juicio") $("estado-votos").textContent = mensaje;
+}
+
+function manejarFaseCambio(msg) {
+  if (msg.fase === "partida") {
+    if (msg.jugadores) registrarJugadores(msg.jugadores);
+    estado.contactadoId = msg.contactadoId;
+    prepararPartida();
+    iniciarReloj(msg.restanteMs, "reloj");
+    mostrarPantalla("partida");
+  } else if (msg.fase === "juicio") {
+    estado.contactadoId = msg.contactadoId;
+    dibujarJuicio();
+    iniciarReloj(msg.restanteMs, "reloj-juicio");
+    mostrarPantalla("juicio");
+  } else if (msg.fase === "final") {
+    dibujarFinal(msg.resultado);
+    mostrarPantalla("final");
+  } else if (msg.fase === "lobby") {
+    // Revancha: el lobby actualizado llega en el próximo mensaje.
+    mostrarPantalla("lobby");
   }
 }
 
@@ -126,6 +203,8 @@ function manejarMensaje(msg) {
 function dibujarLobby(msg) {
   $("codigo-sala").textContent = estado.codigo;
   $("conteo-lobby").textContent = `OPERADORES EN LÍNEA: ${msg.jugadores.length}/8`;
+
+  registrarJugadores(msg.jugadores);
 
   const lista = $("lista-jugadores");
   lista.innerHTML = "";
@@ -141,10 +220,17 @@ function dibujarLobby(msg) {
     lista.appendChild(item);
   });
 
-  const soyCreador = msg.creadorId === estado.tuId;
+  estado.soyCreador = msg.creadorId === estado.tuId;
+
+  // Selector de dificultad: solo el jefe puede tocarlo.
+  document.querySelectorAll("#selector-dificultad button").forEach((b) => {
+    b.classList.toggle("elegido", b.dataset.dif === msg.dificultad);
+    b.disabled = !estado.soyCreador;
+  });
+
   const boton = $("boton-iniciar");
-  boton.hidden = !soyCreador;
-  if (soyCreador) {
+  boton.hidden = !estado.soyCreador;
+  if (estado.soyCreador) {
     const faltan = 4 - msg.jugadores.length;
     boton.disabled = faltan > 0;
     $("nota-iniciar").textContent =
@@ -162,10 +248,48 @@ function escaparHTML(texto) {
   return div.innerHTML;
 }
 
+// ─── Revelación de rol ───
+
+function dibujarRevelacion(msg) {
+  const rol = ROLES[msg.rol];
+  $("rol-titulo").textContent = rol.titulo;
+  $("rol-descripcion").textContent = rol.descripcion;
+  $("rol-palabra").hidden = !msg.palabra;
+  if (msg.palabra) {
+    $("palabra-secreta").textContent = msg.palabra.toUpperCase();
+  }
+  const boton = $("boton-entendido");
+  boton.disabled = false;
+  $("conteo-confirmados").textContent = "";
+}
+
+$("boton-entendido").onclick = () => {
+  estado.ws.send(JSON.stringify({ tipo: "entendido" }));
+  $("boton-entendido").disabled = true;
+};
+
+// ─── El reloj ───
+
+function iniciarReloj(restanteMs, elementoId) {
+  const objetivo = Date.now() + restanteMs;
+  if (estado.relojPantalla) clearInterval(estado.relojPantalla);
+
+  const pintar = () => {
+    const restante = Math.max(0, objetivo - Date.now());
+    const segundos = Math.ceil(restante / 1000);
+    const mm = String(Math.floor(segundos / 60)).padStart(2, "0");
+    const ss = String(segundos % 60).padStart(2, "0");
+    const elemento = $(elementoId);
+    if (elemento) elemento.textContent = `${mm}:${ss}`;
+    if (restante <= 0) clearInterval(estado.relojPantalla);
+  };
+  pintar();
+  estado.relojPantalla = setInterval(pintar, 250);
+}
+
 // ─── La Terminal ───
 
 function registrarJugadores(lista) {
-  estado.jugadores = {};
   lista.forEach((j) => {
     estado.jugadores[j.id] = j;
   });
@@ -181,18 +305,23 @@ function nombreDe(jugadorId) {
   return j ? j.nombre : "???";
 }
 
-// El tecleo se transmite agrupado cada ~100 ms (no tecla por tecla),
-// pero en pantalla se siente en vivo, borrones incluidos.
-function iniciarTerminal() {
+function prepararPartida() {
   estado.vivos = {};
   $("historial").innerHTML = "";
   $("lineas-vivas").innerHTML = "";
   $("campo-mensaje").value = "";
 
+  // El Contactado no tiene teclado: ve sus 5 botones de respuesta.
+  const soyContactado = estado.miRol === "contactado";
+  $("form-mensaje").hidden = soyContactado;
+  $("panel-contactado").hidden = !soyContactado;
+
+  // El tecleo se transmite agrupado cada ~100 ms (no tecla por tecla),
+  // pero en pantalla se siente en vivo, borrones incluidos.
   let ultimoEnviado = "";
   if (estado.relojTecleo) clearInterval(estado.relojTecleo);
   estado.relojTecleo = setInterval(() => {
-    if (estado.fase !== "partida") return;
+    if (estado.fase !== "partida" || soyContactado) return;
     const texto = $("campo-mensaje").value;
     if (texto !== ultimoEnviado) {
       ultimoEnviado = texto;
@@ -212,7 +341,19 @@ function agregarAlHistorial(msg) {
   linea.append(nombre, texto);
   $("historial").appendChild(linea);
 
-  // Auto-scroll al fondo para seguir la conversación.
+  const term = $("terminal");
+  term.scrollTop = term.scrollHeight;
+}
+
+function agregarLineaSistema(texto) {
+  const linea = document.createElement("div");
+  linea.className = "linea-sistema";
+  linea.textContent = `*** ${texto} ***`;
+  $("historial").appendChild(linea);
+
+  // Vibración en las respuestas del Contactado (donde haya soporte).
+  if (navigator.vibrate) navigator.vibrate(80);
+
   const term = $("terminal");
   term.scrollTop = term.scrollHeight;
 }
@@ -243,6 +384,80 @@ $("form-mensaje").onsubmit = (evento) => {
   estado.ws.send(JSON.stringify({ tipo: "enviar", texto }));
   campo.value = "";
   campo.focus();
+};
+
+document.querySelectorAll("#botones-respuesta button").forEach((boton) => {
+  boton.onclick = () => {
+    estado.ws.send(JSON.stringify({ tipo: "respuesta", valor: boton.dataset.valor }));
+  };
+});
+
+// ─── Juicio Final ───
+
+let votoEmitido = false;
+function yaVote() {
+  return votoEmitido;
+}
+
+function dibujarJuicio() {
+  votoEmitido = false;
+  const zona = $("lista-sospechosos");
+  zona.innerHTML = "";
+  $("estado-votos").textContent = "VOTÁ EN SECRETO. EL CONTACTADO QUEDA EXENTO.";
+
+  Object.values(estado.jugadores).forEach((j) => {
+    if (j.id === estado.contactadoId) return;
+    const boton = document.createElement("button");
+    boton.className = "sospechoso";
+    const av = AVATARES[j.avatar] || AVATARES[0];
+    boton.innerHTML = `
+      <span class="cara" style="background:${av.color}">${av.iniciales}</span>
+      <span>${escaparHTML(j.nombre)}${j.id === estado.tuId ? " (VOS)" : ""}</span>`;
+    boton.onclick = () => {
+      if (votoEmitido) return;
+      votoEmitido = true;
+      estado.ws.send(JSON.stringify({ tipo: "votar", objetivoId: j.id }));
+      zona.querySelectorAll("button").forEach((b) => (b.disabled = true));
+      boton.classList.add("votado");
+    };
+    zona.appendChild(boton);
+  });
+}
+
+// ─── Resultado ───
+
+function dibujarFinal(resultado) {
+  const gananHumanos = resultado.ganador === "humanos";
+  $("titulo-final").textContent = gananHumanos
+    ? resultado.motivo === "descifrado"
+      ? ":: MENSAJE DESCIFRADO ::"
+      : ":: METAMORFO IDENTIFICADO ::"
+    : ":: VICTORIA DEL METAMORFO ::";
+  $("titulo-final").style.color = gananHumanos ? "#33ff66" : "#cc2a1f";
+
+  $("detalle-final").textContent = gananHumanos
+    ? "LA HUMANIDAD ESTABLECIÓ PRIMER CONTACTO."
+    : "LA SEÑAL SE PERDIÓ PARA SIEMPRE.";
+
+  $("revelacion-final").innerHTML = "";
+  const palabra = document.createElement("p");
+  palabra.textContent = `LA PALABRA ERA: ${(resultado.palabra || "?").toUpperCase()}`;
+  const meta = document.createElement("p");
+  meta.textContent = `EL METAMORFO ERA: ${nombreDe(resultado.metamorfoId)}`;
+  meta.style.color = "#cc2a1f";
+  $("revelacion-final").append(palabra, meta);
+
+  const lista = $("recuento-votos");
+  lista.innerHTML = "";
+  (resultado.recuento || []).forEach((r) => {
+    const item = document.createElement("li");
+    item.textContent = `${nombreDe(r.id)}: ${r.votos} VOTO${r.votos === 1 ? "" : "S"}`;
+    lista.appendChild(item);
+  });
+}
+
+$("boton-revancha").onclick = () => {
+  estado.ws.send(JSON.stringify({ tipo: "revancha" }));
 };
 
 // ─── Acciones de inicio ───
@@ -287,5 +502,11 @@ $("boton-unirse").onclick = () => {
 $("boton-iniciar").onclick = () => {
   estado.ws.send(JSON.stringify({ tipo: "iniciar" }));
 };
+
+document.querySelectorAll("#selector-dificultad button").forEach((boton) => {
+  boton.onclick = () => {
+    estado.ws.send(JSON.stringify({ tipo: "dificultad", valor: boton.dataset.dif }));
+  };
+});
 
 armarGrillaAvatares();

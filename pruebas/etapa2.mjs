@@ -1,4 +1,6 @@
 // Prueba de la Etapa 2: la Terminal en vivo.
+// (Actualizada en la Etapa 3: ahora hay roles, y el Contactado no
+// teclea, así que las pruebas de tipeo usan jugadores con teclado.)
 const BASE = "http://localhost:8787";
 const WS = "ws://localhost:8787";
 
@@ -12,13 +14,15 @@ function ok(cond, desc) {
 
 function clienteNuevo(codigo, nombre, avatar = 0) {
   const ws = new WebSocket(`${WS}/api/sala/${codigo}/ws`);
-  const c = { ws, nombre, mensajes: [], tuId: null };
+  const c = { ws, nombre, mensajes: [], tuId: null, rol: null };
   ws.onopen = () => ws.send(JSON.stringify({ tipo: "unirse", nombre, avatar }));
   ws.onmessage = (e) => {
     const m = JSON.parse(e.data);
     c.mensajes.push(m);
     if (m.tipo === "bienvenida") c.tuId = m.tuId;
+    if (m.tipo === "rol") c.rol = m.rol;
   };
+  c.enviar = (obj) => c.ws.send(JSON.stringify(obj));
   return c;
 }
 
@@ -33,15 +37,18 @@ await espera(400);
 const beto = clienteNuevo(codigo, "Beto", 1);
 const cami = clienteNuevo(codigo, "Cami", 2);
 const dani = clienteNuevo(codigo, "Dani", 3);
+const clientes = [ana, beto, cami, dani];
 await espera(600);
 
 // 1. Tecleo antes de iniciar la partida: ignorado.
-ana.ws.send(JSON.stringify({ tipo: "tecleo", texto: "anticipado" }));
+ana.enviar({ tipo: "tecleo", texto: "anticipado" });
 await espera(300);
 ok(!ultimo(beto, "tecleo"), "el tecleo en fase lobby se ignora");
 
-ana.ws.send(JSON.stringify({ tipo: "iniciar" }));
+ana.enviar({ tipo: "iniciar" });
 await espera(400);
+clientes.forEach((c) => c.enviar({ tipo: "entendido" }));
+await espera(500);
 
 // 2. faseCambio trae la lista de jugadores con colores.
 const fc = ultimo(cami, "faseCambio");
@@ -49,57 +56,58 @@ ok(fc && fc.jugadores?.length === 4, "faseCambio incluye los 4 jugadores");
 const colores = fc.jugadores.map((j) => j.color);
 ok(new Set(colores).size === 4, `colores todos distintos (${colores.join(",")})`);
 
+// Los actores con teclado: todos menos el Contactado (que observa).
+const [x, y, z] = clientes.filter((c) => c.rol !== "contactado");
+const observador = clientes.find((c) => c.rol === "contactado");
+
 // 3. Tecleo en vivo: los demás lo ven, quien teclea no recibe eco.
-ana.ws.send(JSON.stringify({ tipo: "tecleo", texto: "es un anim" }));
+x.enviar({ tipo: "tecleo", texto: "es un anim" });
 await espera(300);
-ok(ultimo(beto, "tecleo")?.texto === "es un anim", "Beto ve el borrador de Ana");
-ok(ultimo(dani, "tecleo")?.texto === "es un anim", "Dani también lo ve");
-ok(todos(ana, "tecleo").length === 0, "Ana no recibe eco de su propio tecleo");
+ok(ultimo(y, "tecleo")?.texto === "es un anim", "los demás ven el borrador en vivo");
+ok(ultimo(observador, "tecleo")?.texto === "es un anim", "el contactado también lo ve");
+ok(todos(x, "tecleo").length === 0, "quien teclea no recibe eco de su propio texto");
 
 // 4. El borrón también se transmite.
-ana.ws.send(JSON.stringify({ tipo: "tecleo", texto: "es un" }));
+x.enviar({ tipo: "tecleo", texto: "es un" });
 await espera(300);
-ok(ultimo(beto, "tecleo")?.texto === "es un", "el borrón de Ana llega (texto más corto)");
+ok(ultimo(y, "tecleo")?.texto === "es un", "el borrón llega (texto más corto)");
 
-// 5. Mensaje enviado: llega a todos, incluida Ana, con nombre y color.
-ana.ws.send(JSON.stringify({ tipo: "enviar", texto: "¿es un animal?" }));
+// 5. Mensaje enviado: llega a todos, incluido el autor, con nombre y color.
+x.enviar({ tipo: "enviar", texto: "una pregunta cualquiera" });
 await espera(300);
-const msgAna = ultimo(ana, "mensaje");
-ok(msgAna?.texto === "¿es un animal?", "Ana ve su propio mensaje en el historial");
-ok(msgAna?.nombre === "Ana", "el mensaje lleva el nombre");
-ok(typeof msgAna?.color === "number", "el mensaje lleva el color");
-ok(ultimo(dani, "mensaje")?.texto === "¿es un animal?", "Dani recibe el mensaje");
+const msgX = ultimo(x, "mensaje");
+ok(msgX?.texto === "una pregunta cualquiera", "el autor ve su mensaje en el historial");
+ok(msgX?.nombre === x.nombre, "el mensaje lleva el nombre");
+ok(typeof msgX?.color === "number", "el mensaje lleva el color");
+ok(ultimo(observador, "mensaje")?.texto === "una pregunta cualquiera", "todos reciben el mensaje");
 
 // 6. Mensaje vacío o de espacios: ignorado.
-beto.ws.send(JSON.stringify({ tipo: "enviar", texto: "   " }));
+y.enviar({ tipo: "enviar", texto: "   " });
 await espera(300);
-ok(todos(cami, "mensaje").length === 1, "el mensaje vacío no se difunde");
+ok(todos(z, "mensaje").length === 1, "el mensaje vacío no se difunde");
 
 // 7. Texto gigante: truncado a 200.
-const gigante = "x".repeat(500);
-beto.ws.send(JSON.stringify({ tipo: "enviar", texto: gigante }));
+y.enviar({ tipo: "enviar", texto: "x".repeat(500) });
 await espera(300);
-ok(ultimo(cami, "mensaje")?.texto.length === 200, "mensaje largo truncado a 200");
+ok(ultimo(z, "mensaje")?.texto.length === 200, "mensaje largo truncado a 200");
 
 // 8. Tecleo simultáneo de dos jugadores: atribución correcta.
-beto.ws.send(JSON.stringify({ tipo: "tecleo", texto: "yo pregunto si vuela" }));
-cami.ws.send(JSON.stringify({ tipo: "tecleo", texto: "yo pienso otra cosa" }));
+y.enviar({ tipo: "tecleo", texto: "pregunto si vuela" });
+z.enviar({ tipo: "tecleo", texto: "pienso otra cosa" });
 await espera(300);
-const tecleosDani = todos(dani, "tecleo");
-const deBeto = tecleosDani.filter((t) => t.jugadorId === beto.tuId).pop();
-const deCami = tecleosDani.filter((t) => t.jugadorId === cami.tuId).pop();
-ok(deBeto?.texto === "yo pregunto si vuela", "el tecleo de Beto llega atribuido a Beto");
-ok(deCami?.texto === "yo pienso otra cosa", "el tecleo de Cami llega atribuido a Cami");
+const tecleos = todos(observador, "tecleo");
+const deY = tecleos.filter((t) => t.jugadorId === y.tuId).pop();
+const deZ = tecleos.filter((t) => t.jugadorId === z.tuId).pop();
+ok(deY?.texto === "pregunto si vuela", "el tecleo simultáneo se atribuye bien (1/2)");
+ok(deZ?.texto === "pienso otra cosa", "el tecleo simultáneo se atribuye bien (2/2)");
 
 // 9. Desconexión a mitad de tecleo: la línea viva se borra para el resto.
-cami.ws.close();
+z.ws.close();
 await espera(400);
-const limpiezaCami = todos(dani, "tecleo")
-  .filter((t) => t.jugadorId === cami.tuId)
-  .pop();
-ok(limpiezaCami?.texto === "", "al irse Cami, su línea viva se limpia (texto vacío)");
+const limpieza = todos(y, "tecleo").filter((t) => t.jugadorId === z.tuId).pop();
+ok(limpieza?.texto === "", "al irse un jugador, su línea viva se limpia");
 
-[ana, beto, dani].forEach((c) => c.ws.close());
+[ana, beto, cami, dani].forEach((c) => c.ws.close());
 await espera(300);
 console.log(fallas === 0 ? "\nTODO OK" : `\n${fallas} FALLAS`);
 process.exit(fallas === 0 ? 0 : 1);
