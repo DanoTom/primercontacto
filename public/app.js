@@ -64,9 +64,7 @@ function armarGrillaAvatares() {
     const boton = document.createElement("button");
     boton.type = "button";
     boton.className = "avatar" + (i === 0 ? " elegido" : "");
-    boton.innerHTML = `
-      <span class="cara" style="background:${av.color}">${av.iniciales}</span>
-      <span class="rotulo">${av.nombre}</span>`;
+    boton.innerHTML = `<img class="cara" src="${av.img}" alt="${av.nombre}">`;
     boton.onclick = () => {
       estado.avatarElegido = i;
       grilla.querySelectorAll(".avatar").forEach((b) =>
@@ -214,7 +212,7 @@ function dibujarLobby(msg) {
     const esJefe = j.id === msg.creadorId;
     const sosVos = j.id === estado.tuId;
     item.innerHTML = `
-      <span class="cara" style="background:${av.color}">${av.iniciales}</span>
+      <img class="cara" src="${av.img}" alt="">
       <span>${escaparHTML(j.nombre)}${sosVos ? " (VOS)" : ""}</span>
       ${esJefe ? '<span class="etiqueta-jefe">JEFE DE ESTACIÓN</span>' : ""}`;
     lista.appendChild(item);
@@ -411,7 +409,7 @@ function dibujarJuicio() {
     boton.className = "sospechoso";
     const av = AVATARES[j.avatar] || AVATARES[0];
     boton.innerHTML = `
-      <span class="cara" style="background:${av.color}">${av.iniciales}</span>
+      <img class="cara" src="${av.img}" alt="">
       <span>${escaparHTML(j.nombre)}${j.id === estado.tuId ? " (VOS)" : ""}</span>`;
     boton.onclick = () => {
       if (votoEmitido) return;

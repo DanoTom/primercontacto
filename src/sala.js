@@ -15,7 +15,7 @@ import { PALABRAS } from "./palabras.js";
 const MAX_JUGADORES = 8;
 const MIN_JUGADORES = 4;
 const MAX_NOMBRE = 12;
-const CANT_AVATARES = 8;
+const CANT_AVATARES = 30;
 const CANT_COLORES = 8;
 const MAX_MENSAJE = 200;
 const MAX_HISTORIAL = 200;
