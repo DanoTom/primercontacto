@@ -1,0 +1,13 @@
+{
+  "name": "primer-contacto",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Juego web multijugador de deducción social con estética de aparato ochentoso",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy"
+  },
+  "devDependencies": {
+    "wrangler": "^4.99.0"
+  }
+}

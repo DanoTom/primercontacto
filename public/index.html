@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>PRIMER CONTACTO — Prueba de señal</title>
+  <style>
+    /* Estilo mínimo de prueba. La estética real llega en la Etapa 5. */
+    body {
+      font-family: monospace;
+      background: #0a120c;
+      color: #33ff66;
+      margin: 0;
+      padding: 24px;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      align-items: flex-start;
+    }
+    h1 { font-size: 18px; margin: 0; }
+    button {
+      font-family: monospace;
+      font-size: 16px;
+      padding: 12px 20px;
+      background: #1a2a1c;
+      color: #33ff66;
+      border: 1px solid #33ff66;
+      cursor: pointer;
+      min-height: 44px;
+    }
+    #registro {
+      white-space: pre-wrap;
+      font-size: 14px;
+      max-width: 100%;
+    }
+  </style>
+</head>
+<body>
+  <h1>:: PRIMER CONTACTO — PRUEBA DE SEÑAL ::</h1>
+  <div id="estado">CONECTANDO...</div>
+  <div id="conteo"></div>
+  <button id="ping">EMITIR PING</button>
+  <div id="registro"></div>
+
+  <script>
+    // Etapa 0: todas las pestañas se conectan a la sala fija "HOLA"
+    // para comprobar que se ven entre sí en tiempo real.
+    const protocolo = location.protocol === "https:" ? "wss" : "ws";
+    const ws = new WebSocket(`${protocolo}://${location.host}/api/sala/HOLA/ws`);
+
+    const $ = (id) => document.getElementById(id);
+
+    ws.onopen = () => {
+      $("estado").textContent = "SEÑAL ESTABLECIDA";
+    };
+
+    ws.onclose = () => {
+      $("estado").textContent = "SEÑAL PERDIDA. RECARGÁ LA PÁGINA.";
+    };
+
+    ws.onmessage = (evento) => {
+      const msg = JSON.parse(evento.data);
+      if (msg.tipo === "conteo") {
+        $("conteo").textContent = `DISPOSITIVOS EN LA SALA: ${msg.conectados}`;
+      }
+      if (msg.tipo === "ping") {
+        $("registro").textContent =
+          `> PING RECIBIDO [${msg.hora}]\n` + $("registro").textContent;
+      }
+    };
+
+    $("ping").onclick = () => {
+      ws.send(JSON.stringify({ tipo: "ping" }));
+    };
+  </script>
+</body>
+</html>

@@ -1,0 +1,37 @@
+{
+  // Configuración de Cloudflare Workers para Primer Contacto.
+  // "name" es el nombre del proyecto en Cloudflare.
+  "name": "primer-contacto",
+
+  // El punto de entrada del servidor (el "backend").
+  "main": "src/worker.js",
+
+  "compatibility_date": "2026-06-01",
+
+  // Los archivos del juego que ve el navegador (HTML, CSS, JS)
+  // viven en la carpeta "public" y se sirven directo desde el Worker.
+  "assets": {
+    "directory": "./public"
+  },
+
+  // Cada sala de juego es una instancia de "Sala" (un Durable Object:
+  // un pedacito de servidor con memoria propia que vive mientras
+  // haya gente conectada).
+  "durable_objects": {
+    "bindings": [
+      {
+        "name": "SALAS",
+        "class_name": "Sala"
+      }
+    ]
+  },
+
+  // Las migraciones le avisan a Cloudflare qué Durable Objects existen.
+  // "new_sqlite_classes" es el tipo que entra en el plan gratuito.
+  "migrations": [
+    {
+      "tag": "v1",
+      "new_sqlite_classes": ["Sala"]
+    }
+  ]
+}
