@@ -83,6 +83,7 @@ function conectar(codigo) {
   const ws = new WebSocket(`${protocolo}://${location.host}/api/sala/${codigo}/ws`);
   estado.ws = ws;
   estado.codigo = codigo;
+  estado.huboError = false;
 
   ws.onopen = () => {
     ws.send(JSON.stringify({
@@ -98,6 +99,13 @@ function conectar(codigo) {
     if (estado.fase !== "inicio") {
       mostrarPantalla("inicio");
       avisar("SEÑAL PERDIDA. VOLVÉ A INTENTAR.");
+    } else if (!estado.huboError) {
+      // La conexión en vivo nunca se estableció (típico de redes
+      // corporativas que bloquean WebSockets).
+      avisar(
+        "NO SE PUDO ESTABLECER LA SEÑAL. SI TU RED BLOQUEA CONEXIONES " +
+        "(OFICINAS, ESCUELAS), PROBÁ CON DATOS MÓVILES."
+      );
     }
   };
 }
@@ -187,6 +195,7 @@ function manejarMensaje(msg) {
       break;
 
     case "error":
+      estado.huboError = true;
       mostrarError(msg.mensaje);
       break;
   }
@@ -644,8 +653,14 @@ function validarNombre() {
 $("boton-crear").onclick = async () => {
   if (!validarNombre()) return;
   avisar("BUSCANDO FRECUENCIA LIBRE...");
+  // Si la red no responde en 10 segundos, se corta y se avisa.
+  const control = new AbortController();
+  const temporizador = setTimeout(() => control.abort(), 10000);
   try {
-    const respuesta = await fetch("/api/crear", { method: "POST" });
+    const respuesta = await fetch("/api/crear", {
+      method: "POST",
+      signal: control.signal,
+    });
     const datos = await respuesta.json();
     if (!respuesta.ok) {
       avisar(datos.error || "FALLA EN LA ESTACIÓN. INTENTÁ DE NUEVO.");
@@ -653,8 +668,14 @@ $("boton-crear").onclick = async () => {
     }
     avisar("");
     conectar(datos.codigo);
-  } catch {
-    avisar("SIN CONEXIÓN CON LA ESTACIÓN. REVISÁ TU INTERNET.");
+  } catch (e) {
+    avisar(
+      e.name === "AbortError"
+        ? "LA ESTACIÓN NO RESPONDE. TU RED PUEDE ESTAR BLOQUEANDO LA SEÑAL: PROBÁ CON DATOS MÓVILES."
+        : "SIN CONEXIÓN CON LA ESTACIÓN. REVISÁ TU INTERNET."
+    );
+  } finally {
+    clearTimeout(temporizador);
   }
 };
 
