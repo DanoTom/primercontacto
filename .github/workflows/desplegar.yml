@@ -1,0 +1,30 @@
+# Despliegue automático a Cloudflare Workers.
+#
+# Se ejecuta solo en cada push a las ramas listadas, y también se puede
+# lanzar a mano desde la pestaña "Actions" de GitHub ("Run workflow").
+# Necesita el secreto CLOUDFLARE_API_TOKEN configurado en el repositorio
+# (Settings → Secrets and variables → Actions).
+
+name: Desplegar en Cloudflare
+
+on:
+  push:
+    branches:
+      - main
+      - claude/serene-heisenberg-pkgxnf
+  workflow_dispatch:
+
+jobs:
+  desplegar:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Bajar el código
+        uses: actions/checkout@v4
+
+      - name: Instalar dependencias
+        run: npm ci
+
+      - name: Desplegar con Wrangler
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
