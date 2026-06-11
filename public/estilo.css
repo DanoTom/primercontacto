@@ -306,6 +306,134 @@ button:disabled {
   grid-column: 1 / -1;
 }
 
+/* Panel de avatares en partida */
+#panel-avatares {
+  display: flex;
+  gap: 10px;
+  overflow-x: auto;
+  padding: 4px 2px;
+  flex-shrink: 0;
+}
+
+.ficha-avatar {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  flex-shrink: 0;
+}
+
+.ficha-avatar .cara {
+  width: 44px;
+  height: 44px;
+}
+
+.nombre-ficha {
+  font-size: 9px;
+  max-width: 52px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* El micro-glitch del Metamorfo */
+.glitch {
+  animation: glitcheo 0.12s steps(2) 8;
+}
+
+@keyframes glitcheo {
+  0% { transform: translate(0, 0); filter: none; }
+  25% { transform: translate(-2px, 1px) skewX(8deg); filter: hue-rotate(120deg) saturate(3); }
+  50% { transform: translate(2px, -1px); filter: invert(0.8); }
+  75% { transform: translate(-1px, -2px) skewX(-6deg); filter: hue-rotate(-100deg); }
+  100% { transform: translate(0, 0); filter: none; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .glitch {
+    animation: none;
+    opacity: 0.35;
+    transition: opacity 0.2s;
+  }
+}
+
+/* Botón EMERGENCIA y confirmación */
+#zona-emergencia {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+#boton-emergencia {
+  background: #cc2a1f;
+  color: #ffe6e3;
+  border: 1px solid #8a1d15;
+  font-weight: bold;
+  letter-spacing: 2px;
+}
+
+#boton-emergencia.cargando {
+  animation: carga-emergencia 1s linear forwards;
+}
+
+@keyframes carga-emergencia {
+  from { box-shadow: inset 0 0 0 0 #ffb000; }
+  to { box-shadow: inset 480px 0 0 0 #ffb000; }
+}
+
+#boton-emergencia.agotado,
+#boton-emergencia:disabled {
+  opacity: 0.4;
+}
+
+button.peligro {
+  background: #cc2a1f;
+  color: #ffe6e3;
+  border-color: #8a1d15;
+  font-weight: bold;
+}
+
+.overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(4, 8, 5, 0.88);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  z-index: 10;
+}
+
+.overlay[hidden] { display: none; }
+
+.tarjeta-overlay {
+  background: #101c12;
+  border: 1px solid #ffb000;
+  padding: 24px;
+  max-width: 360px;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  text-align: center;
+}
+
+.titulo-overlay {
+  font-size: 20px;
+  letter-spacing: 3px;
+  color: #ffb000;
+}
+
+.tarjeta-overlay p { font-size: 13px; line-height: 1.6; margin: 0; }
+
+#palabra-nueva {
+  font-size: 30px;
+  letter-spacing: 6px;
+  color: #ffb000;
+  border: 1px dashed #ffb000;
+  padding: 12px;
+}
+
 /* Juicio Final */
 #lista-sospechosos {
   display: flex;

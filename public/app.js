@@ -149,6 +149,29 @@ function manejarMensaje(msg) {
       agregarLineaSistema(msg.texto);
       break;
 
+    case "glitch":
+      mostrarGlitch(msg.jugadorId);
+      break;
+
+    case "interferencia":
+      sufrirInterferencia(msg.duracionMs);
+      break;
+
+    case "reinicioEstado":
+      $("nota-emergencia").textContent =
+        msg.presionados > 0
+          ? `REINICIO: ${msg.presionados}/${msg.total} — FALTAN ${msg.total - msg.presionados}`
+          : "";
+      break;
+
+    case "emergenciaConfirmada":
+      bloquearEmergencia(msg.accion);
+      break;
+
+    case "palabraNueva":
+      mostrarPalabraNueva(msg.palabra);
+      break;
+
     case "votoRegistrado":
       $("estado-votos").textContent = "VOTO REGISTRADO. ESPERANDO AL RESTO...";
       break;
@@ -173,11 +196,15 @@ function mostrarError(mensaje) {
   if (estado.fase === "inicio") avisar(mensaje);
   else if (estado.fase === "lobby") $("nota-iniciar").textContent = mensaje;
   else if (estado.fase === "juicio") $("estado-votos").textContent = mensaje;
+  else if (estado.fase === "partida") $("nota-emergencia").textContent = mensaje;
 }
 
 function manejarFaseCambio(msg) {
   if (msg.fase === "partida") {
-    if (msg.jugadores) registrarJugadores(msg.jugadores);
+    if (msg.jugadores) {
+      registrarJugadores(msg.jugadores);
+      estado.listaJugadores = msg.jugadores;
+    }
     estado.contactadoId = msg.contactadoId;
     prepararPartida();
     iniciarReloj(msg.restanteMs, "reloj");
@@ -308,11 +335,22 @@ function prepararPartida() {
   $("historial").innerHTML = "";
   $("lineas-vivas").innerHTML = "";
   $("campo-mensaje").value = "";
+  dibujarAvatares();
+
+  // El botón EMERGENCIA arranca cargado en cada partida.
+  const emergencia = $("boton-emergencia");
+  emergencia.disabled = false;
+  emergencia.classList.remove("agotado");
+  $("nota-emergencia").textContent = "";
+  $("nota-contactado").textContent = "";
 
   // El Contactado no tiene teclado: ve sus 5 botones de respuesta.
   const soyContactado = estado.miRol === "contactado";
   $("form-mensaje").hidden = soyContactado;
   $("panel-contactado").hidden = !soyContactado;
+  document.querySelectorAll("#botones-respuesta button").forEach((b) => {
+    b.disabled = false;
+  });
 
   // El tecleo se transmite agrupado cada ~100 ms (no tecla por tecla),
   // pero en pantalla se siente en vivo, borrones incluidos.
@@ -389,6 +427,140 @@ document.querySelectorAll("#botones-respuesta button").forEach((boton) => {
     estado.ws.send(JSON.stringify({ tipo: "respuesta", valor: boton.dataset.valor }));
   };
 });
+
+// ─── Panel de avatares y acciones de riesgo ───
+
+function dibujarAvatares() {
+  const panel = $("panel-avatares");
+  panel.innerHTML = "";
+  (estado.listaJugadores || []).forEach((j) => {
+    const av = AVATARES[j.avatar] || AVATARES[0];
+    const ficha = document.createElement("div");
+    ficha.className = "ficha-avatar";
+    ficha.id = `ficha-${j.id}`;
+    ficha.innerHTML = `
+      <img class="cara" src="${av.img}" alt="">
+      <span class="nombre-ficha">${escaparHTML(j.nombre)}</span>`;
+    panel.appendChild(ficha);
+  });
+}
+
+// El micro-glitch del Metamorfo: ~1 segundo, sutil pero detectable
+// si alguien está mirando el panel en ese momento.
+function mostrarGlitch(jugadorId) {
+  const ficha = $(`ficha-${jugadorId}`);
+  if (!ficha) return;
+  ficha.classList.add("glitch");
+  setTimeout(() => ficha.classList.remove("glitch"), 1000);
+}
+
+// El Contactado sufre la Interferencia: botones muertos un rato.
+function sufrirInterferencia(duracionMs) {
+  const botones = document.querySelectorAll("#botones-respuesta button");
+  botones.forEach((b) => (b.disabled = true));
+  $("nota-contactado").textContent = "⚠ INTERFERENCIA EN TUS CONTROLES ⚠";
+  if (navigator.vibrate) navigator.vibrate([60, 40, 60]);
+  setTimeout(() => {
+    botones.forEach((b) => (b.disabled = false));
+    $("nota-contactado").textContent = "";
+  }, duracionMs);
+}
+
+function mostrarPalabraNueva(palabra) {
+  $("palabra-nueva").textContent = palabra.toUpperCase();
+  $("overlay-palabra").hidden = false;
+  setTimeout(() => {
+    $("overlay-palabra").hidden = true;
+  }, 3000);
+}
+
+function bloquearEmergencia(accion) {
+  const boton = $("boton-emergencia");
+  boton.disabled = true;
+  boton.classList.add("agotado");
+  if (accion === "reinicio") {
+    // El botón queda trabado; el indicador muestra cuántos faltan.
+    $("nota-emergencia").textContent = "REINICIO ENVIADO. ESPERANDO AL RESTO...";
+  }
+}
+
+// El botón EMERGENCIA es idéntico para todos los roles: solo al
+// mantenerlo presionado 1 segundo revela qué hace para tu rol,
+// con confirmación. Así nadie deduce roles espiando pantallas.
+const ACCIONES_EMERGENCIA = {
+  metamorfo: {
+    titulo: "INTERFERENCIA MANUAL",
+    descripcion:
+      "APAGA LOS CONTROLES DEL CONTACTADO POR 15 SEGUNDOS. " +
+      "COSTO: TU AVATAR SUFRIRÁ UN GLITCH VISIBLE DE 1 SEGUNDO. UN SOLO USO.",
+  },
+  contactado: {
+    titulo: "TRANSMISIÓN DE EMERGENCIA",
+    descripcion:
+      "ENVÍA LA PRIMERA LETRA DE LA PALABRA A LA TERMINAL. " +
+      "COSTO: −45 SEGUNDOS DE RELOJ. UN SOLO USO.",
+  },
+  investigador: {
+    titulo: "REINICIO DE SISTEMA",
+    descripcion:
+      "SI TODOS LOS INVESTIGADORES LO ACTIVAN, LA PALABRA CAMBIA POR UNA " +
+      "NUEVA Y EL RELOJ RECUPERA 60 SEGUNDOS. TU BOTÓN QUEDARÁ TRABADO. UN SOLO USO.",
+  },
+};
+
+let temporizadorEmergencia = null;
+
+function abrirConfirmacionEmergencia() {
+  const accion = ACCIONES_EMERGENCIA[estado.miRol];
+  if (!accion) return;
+  $("emergencia-titulo").textContent = accion.titulo;
+  $("emergencia-descripcion").textContent = accion.descripcion;
+  $("overlay-emergencia").hidden = false;
+}
+
+function armarBotonEmergencia() {
+  const boton = $("boton-emergencia");
+
+  const empezar = (evento) => {
+    if (boton.disabled || estado.fase !== "partida") return;
+    evento.preventDefault();
+    boton.classList.add("cargando");
+    temporizadorEmergencia = setTimeout(() => {
+      boton.classList.remove("cargando");
+      abrirConfirmacionEmergencia();
+    }, 1000);
+  };
+
+  const soltar = () => {
+    boton.classList.remove("cargando");
+    if (temporizadorEmergencia) {
+      clearTimeout(temporizadorEmergencia);
+      temporizadorEmergencia = null;
+    }
+  };
+
+  boton.addEventListener("pointerdown", empezar);
+  boton.addEventListener("pointerup", soltar);
+  boton.addEventListener("pointerleave", soltar);
+  boton.addEventListener("pointercancel", soltar);
+  // Accesibilidad: con teclado, Enter o Espacio abren la confirmación.
+  boton.addEventListener("keydown", (e) => {
+    if ((e.key === "Enter" || e.key === " ") && !boton.disabled) {
+      e.preventDefault();
+      abrirConfirmacionEmergencia();
+    }
+  });
+
+  $("boton-confirmar-emergencia").onclick = () => {
+    $("overlay-emergencia").hidden = true;
+    estado.ws.send(JSON.stringify({ tipo: "emergencia" }));
+  };
+  $("boton-cancelar-emergencia").onclick = () => {
+    $("overlay-emergencia").hidden = true;
+  };
+}
+
+armarBotonEmergencia();
 
 // ─── Juicio Final ───
 

@@ -77,6 +77,8 @@
       <div id="indicador-senal">SEÑAL ACTIVA</div>
     </div>
 
+    <div id="panel-avatares"></div>
+
     <div id="terminal" aria-live="polite">
       <div id="historial"></div>
       <div id="lineas-vivas"></div>
@@ -97,8 +99,32 @@
         <button data-valor="fuerte" class="respuesta">SEÑAL FUERTE</button>
         <button data-valor="debil" class="respuesta">SEÑAL DÉBIL</button>
       </div>
+      <div id="nota-contactado" class="mensaje"></div>
+    </div>
+
+    <div id="zona-emergencia">
+      <button id="boton-emergencia" type="button">⚠ EMERGENCIA</button>
+      <div id="nota-emergencia" class="mensaje"></div>
     </div>
   </section>
+
+  <!-- Confirmación de la acción de riesgo (tras mantener 1 segundo) -->
+  <div id="overlay-emergencia" class="overlay" hidden>
+    <div class="tarjeta-overlay">
+      <div id="emergencia-titulo" class="titulo-overlay"></div>
+      <p id="emergencia-descripcion"></p>
+      <button id="boton-confirmar-emergencia" class="peligro">CONFIRMAR</button>
+      <button id="boton-cancelar-emergencia">CANCELAR</button>
+    </div>
+  </div>
+
+  <!-- Superposición privada de 3 segundos tras el Reinicio de Sistema -->
+  <div id="overlay-palabra" class="overlay" hidden>
+    <div class="tarjeta-overlay">
+      <p class="subtitulo">NUEVA PALABRA INTERCEPTADA</p>
+      <div id="palabra-nueva"></div>
+    </div>
+  </div>
 
   <!-- ═══ PANTALLA: JUICIO FINAL ═══ -->
   <section id="pantalla-juicio" class="pantalla">

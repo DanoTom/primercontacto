@@ -56,9 +56,25 @@ export class Sala extends DurableObject {
   // para que las pruebas automáticas no esperen 5 minutos reales.
   duraciones() {
     if (this.env.MODO_PRUEBA === "1") {
-      return { revelacion: 2500, partida: 8000, juicio: 3000 };
+      return {
+        revelacion: 2500,
+        partida: 8000,
+        juicio: 3000,
+        interferencia: 1500,
+        costoTransmision: 2000,
+        umbralTransmision: 3000,
+        bonoReinicio: 3000,
+      };
     }
-    return { revelacion: 30_000, partida: 300_000, juicio: 60_000 };
+    return {
+      revelacion: 30_000,
+      partida: 300_000,
+      juicio: 60_000,
+      interferencia: 15_000, // botones del Contactado apagados
+      costoTransmision: 45_000, // lo que resta al reloj la primera letra
+      umbralTransmision: 60_000, // mínimo restante para poder transmitir
+      bonoReinicio: 60_000, // compensación al cambiar la palabra
+    };
   }
 
   async fetch(request) {
@@ -175,6 +191,9 @@ export class Sala extends DurableObject {
       case "respuesta":
         await this.manejarRespuesta(ws, msg);
         break;
+      case "emergencia":
+        await this.manejarEmergencia(ws);
+        break;
       case "votar":
         await this.manejarVotar(ws, msg);
         break;
@@ -272,7 +291,13 @@ export class Sala extends DurableObject {
     const palabra = lista[Math.floor(Math.random() * lista.length)];
 
     const finFase = Date.now() + this.duraciones().revelacion;
-    await this.ctx.storage.put({ roles, palabra, finFase });
+    await this.ctx.storage.put({
+      roles,
+      palabra,
+      finFase,
+      usos: { interferencia: false, transmision: false, reinicio: false },
+      votosReinicio: [],
+    });
     await this.cambiarFase("revelacion");
     await this.ctx.storage.setAlarm(finFase);
     this.confirmados = new Set();
@@ -385,11 +410,152 @@ export class Sala extends DurableObject {
     if ((await this.rolDe(yo.id)) !== "contactado") return;
     if (!RESPUESTAS[msg.valor]) return;
 
+    // Botones saboteados por la Interferencia: la respuesta no sale.
+    if (Date.now() < (await this.leer("interferenciaHasta", 0))) return;
+
     const ahora = Date.now();
     if (this.ultimaRespuesta && ahora - this.ultimaRespuesta < PAUSA_RESPUESTA) return;
     this.ultimaRespuesta = ahora;
 
     this.sistema(`EL CONTACTADO RESPONDE: ${RESPUESTAS[msg.valor]}`, msg.valor);
+  }
+
+  // ─── Acciones de riesgo (botón EMERGENCIA, un uso por partida) ───
+
+  // El cliente manda una intención genérica; el servidor decide qué
+  // acción corresponde según el rol. Así nadie puede ejecutar la de otro.
+  async manejarEmergencia(ws) {
+    const yo = ws.deserializeAttachment();
+    if (!yo) return;
+    if ((await this.fase()) !== "partida") return;
+
+    const rol = await this.rolDe(yo.id);
+    if (rol === "metamorfo") await this.accionInterferencia(ws, yo);
+    else if (rol === "contactado") await this.accionTransmision(ws);
+    else if (rol === "investigador") await this.accionReinicio(ws, yo);
+  }
+
+  // Metamorfo: apaga los botones del Contactado. Costo: micro-glitch
+  // visual en su avatar, visible para todos los que estén mirando.
+  async accionInterferencia(ws, yo) {
+    const usos = await this.leer("usos", {});
+    if (usos.interferencia) {
+      return this.enviar(ws, {
+        tipo: "error",
+        mensaje: "INTERFERENCIA AGOTADA: ERA DE UN SOLO USO.",
+      });
+    }
+    usos.interferencia = true;
+    const duracion = this.duraciones().interferencia;
+    await this.ctx.storage.put({
+      usos,
+      interferenciaHasta: Date.now() + duracion,
+    });
+
+    this.difundir({ tipo: "glitch", jugadorId: yo.id });
+    await this.enviarAlRol("contactado", { tipo: "interferencia", duracionMs: duracion });
+    this.enviar(ws, { tipo: "emergenciaConfirmada", accion: "interferencia" });
+  }
+
+  // Contactado: transmite la primera letra de la palabra,
+  // a cambio de quemar reloj. No alcanza la señal si queda poco.
+  async accionTransmision(ws) {
+    const d = this.duraciones();
+    const usos = await this.leer("usos", {});
+    if (usos.transmision) {
+      return this.enviar(ws, {
+        tipo: "error",
+        mensaje: "TRANSMISIÓN DE EMERGENCIA AGOTADA: ERA DE UN SOLO USO.",
+      });
+    }
+    const finFase = await this.leer("finFase", 0);
+    if (finFase - Date.now() < d.umbralTransmision) {
+      return this.enviar(ws, {
+        tipo: "error",
+        mensaje: "SEÑAL DEMASIADO DÉBIL: NO ALCANZA PARA TRANSMITIR.",
+      });
+    }
+
+    usos.transmision = true;
+    const nuevoFin = finFase - d.costoTransmision;
+    await this.ctx.storage.put({ usos, finFase: nuevoFin });
+    await this.ctx.storage.setAlarm(nuevoFin);
+
+    const palabra = await this.leer("palabra", "?");
+    this.sistema(
+      `TRANSMISIÓN DE EMERGENCIA: LA PALABRA COMIENZA CON «${palabra[0].toUpperCase()}»`
+    );
+    this.difundir({ tipo: "reloj", restanteMs: nuevoFin - Date.now() });
+    this.enviar(ws, { tipo: "emergenciaConfirmada", accion: "transmision" });
+  }
+
+  // Investigadores: cuando TODOS presionan REINICIO, la palabra cambia
+  // y el reloj recibe compensación. Los botones presionados quedan trabados.
+  async accionReinicio(ws, yo) {
+    const usos = await this.leer("usos", {});
+    if (usos.reinicio) {
+      return this.enviar(ws, {
+        tipo: "error",
+        mensaje: "EL REINICIO DE SISTEMA YA FUE EJECUTADO.",
+      });
+    }
+    const votos = await this.leer("votosReinicio", []);
+    if (!votos.includes(yo.id)) {
+      votos.push(yo.id);
+      await this.ctx.storage.put("votosReinicio", votos);
+    }
+    this.enviar(ws, { tipo: "emergenciaConfirmada", accion: "reinicio" });
+    await this.evaluarReinicio();
+  }
+
+  async evaluarReinicio(excluir = null) {
+    const usos = await this.leer("usos", {});
+    if (usos.reinicio) return;
+
+    const roles = await this.leer("roles", {});
+    const investigadores = this.jugadores(excluir).filter(
+      (j) => roles[j.id] === "investigador"
+    );
+    const votos = await this.leer("votosReinicio", []);
+    const presionados = investigadores.filter((j) => votos.includes(j.id)).length;
+    const total = investigadores.length;
+
+    // El indicador de cuántos faltan solo lo ven los Investigadores.
+    await this.enviarAlRol("investigador", { tipo: "reinicioEstado", presionados, total });
+
+    if (total > 0 && presionados >= total) {
+      await this.ejecutarReinicio();
+    }
+  }
+
+  async ejecutarReinicio() {
+    const d = this.duraciones();
+    const usos = await this.leer("usos", {});
+    usos.reinicio = true;
+
+    const dificultad = await this.leer("dificultad", "media");
+    const actual = await this.leer("palabra", null);
+    const lista = PALABRAS[dificultad].filter((p) => p !== actual);
+    const palabra = lista[Math.floor(Math.random() * lista.length)];
+
+    const finFase = await this.leer("finFase", 0);
+    const nuevoFin = finFase + d.bonoReinicio;
+    await this.ctx.storage.put({ usos, palabra, finFase: nuevoFin, votosReinicio: [] });
+    await this.ctx.storage.setAlarm(nuevoFin);
+
+    this.sistema("REINICIO DE SISTEMA EJECUTADO. NUEVA PALABRA ASIGNADA. SEÑAL EXTENDIDA.");
+    this.difundir({ tipo: "reloj", restanteMs: nuevoFin - Date.now() });
+    // Superposición privada: solo quienes deben conocer la palabra nueva.
+    await this.enviarAlRol("contactado", { tipo: "palabraNueva", palabra });
+    await this.enviarAlRol("metamorfo", { tipo: "palabraNueva", palabra });
+  }
+
+  async enviarAlRol(rol, obj) {
+    const roles = await this.leer("roles", {});
+    for (const s of this.ctx.getWebSockets()) {
+      const j = s.deserializeAttachment();
+      if (j && roles[j.id] === rol) this.enviar(s, obj);
+    }
   }
 
   sistema(texto, subtipo = null) {
@@ -512,7 +678,10 @@ export class Sala extends DurableObject {
     if (!yo) return;
     if ((await this.fase()) !== "final") return;
 
-    await this.ctx.storage.delete(["palabra", "roles", "finFase", "votos"]);
+    await this.ctx.storage.delete([
+      "palabra", "roles", "finFase", "votos",
+      "usos", "votosReinicio", "interferenciaHasta",
+    ]);
     await this.cambiarFase("lobby");
     this.historial = [];
     this.confirmados = new Set();
@@ -554,6 +723,9 @@ export class Sala extends DurableObject {
       if (yo) {
         this.difundir({ tipo: "tecleo", jugadorId: yo.id, texto: "" }, ws);
       }
+      // Si se fue un investigador que faltaba para el Reinicio,
+      // el umbral baja y puede completarse ahora.
+      await this.evaluarReinicio(ws);
     } else if (fase === "juicio") {
       // Si los que quedan ya votaron todos, no hay que esperar más.
       const votos = await this.leer("votos", {});
