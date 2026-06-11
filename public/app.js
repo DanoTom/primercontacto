@@ -141,6 +141,12 @@ function manejarMensaje(msg) {
     case "tecleo":
       if (msg.texto) {
         estado.vivos[msg.jugadorId] = msg.texto;
+        // tecleo ajeno: tictac suave, como un teletipo lejano
+        const ahora = Date.now();
+        if (ahora - (estado.ultimoTic || 0) > 90) {
+          estado.ultimoTic = ahora;
+          Sonido.tecla();
+        }
       } else {
         delete estado.vivos[msg.jugadorId];
       }
@@ -245,12 +251,14 @@ function dibujarLobby(msg) {
   msg.jugadores.forEach((j) => {
     const av = AVATARES[j.avatar] || AVATARES[0];
     const item = document.createElement("li");
+    item.className = "polaroid";
+    item.style.setProperty("--rot", rotacionDe(j.id));
     const esJefe = j.id === msg.creadorId;
     const sosVos = j.id === estado.tuId;
     item.innerHTML = `
+      ${esJefe ? '<span class="etiqueta-jefe">JEFE DE ESTACIÓN</span>' : ""}
       <img class="cara" src="${av.img}" alt="">
-      <span>${escaparHTML(j.nombre)}${sosVos ? " (VOS)" : ""}</span>
-      ${esJefe ? '<span class="etiqueta-jefe">JEFE DE ESTACIÓN</span>' : ""}`;
+      <span class="nombre-mano">${escaparHTML(j.nombre)}${sosVos ? " (vos)" : ""}</span>`;
     lista.appendChild(item);
   });
 
@@ -282,6 +290,14 @@ function escaparHTML(texto) {
   return div.innerHTML;
 }
 
+// Rotación fija de la polaroid de cada jugador, derivada de su id:
+// la misma foto torcida igual en todas las pantallas, toda la partida.
+function rotacionDe(id) {
+  let h = 0;
+  for (const c of String(id)) h = (h * 31 + c.charCodeAt(0)) % 997;
+  return `${(h % 9) - 4}deg`;
+}
+
 // ─── Revelación de rol ───
 
 function dibujarRevelacion(msg) {
@@ -292,6 +308,8 @@ function dibujarRevelacion(msg) {
   if (msg.palabra) {
     $("palabra-secreta").textContent = msg.palabra.toUpperCase();
   }
+  // El Metamorfo se ve a sí mismo: la única pantalla donde aparece el alien.
+  $("alien-revelacion").hidden = msg.rol !== "metamorfo";
   const boton = $("boton-entendido");
   boton.disabled = false;
   $("conteo-confirmados").textContent = "";
@@ -308,6 +326,7 @@ function iniciarReloj(restanteMs, elementoId) {
   const objetivo = Date.now() + restanteMs;
   if (estado.relojPantalla) clearInterval(estado.relojPantalla);
 
+  let segundosPrevios = null;
   const pintar = () => {
     const restante = Math.max(0, objetivo - Date.now());
     const segundos = Math.ceil(restante / 1000);
@@ -315,6 +334,17 @@ function iniciarReloj(restanteMs, elementoId) {
     const ss = String(segundos % 60).padStart(2, "0");
     const elemento = $(elementoId);
     if (elemento) elemento.textContent = `${mm}:${ss}`;
+
+    // Los últimos 30 segundos: el display titila y la alarma crece.
+    if (elementoId === "reloj" && elemento) {
+      elemento.classList.toggle("critico", segundos <= 30 && segundos > 0);
+      if (segundos <= 30 && segundos > 0 && segundos !== segundosPrevios) {
+        Sonido.alarma(segundos);
+        if (segundos <= 10 && navigator.vibrate) navigator.vibrate(40);
+      }
+    }
+    segundosPrevios = segundos;
+
     if (restante <= 0) clearInterval(estado.relojPantalla);
   };
   pintar();
@@ -396,7 +426,8 @@ function agregarLineaSistema(texto) {
   linea.textContent = `*** ${texto} ***`;
   $("historial").appendChild(linea);
 
-  // Vibración en las respuestas del Contactado (donde haya soporte).
+  // Tono de transmisión + vibración (donde el dispositivo lo soporte).
+  Sonido.transmision();
   if (navigator.vibrate) navigator.vibrate(80);
 
   const term = $("terminal");
@@ -445,8 +476,9 @@ function dibujarAvatares() {
   (estado.listaJugadores || []).forEach((j) => {
     const av = AVATARES[j.avatar] || AVATARES[0];
     const ficha = document.createElement("div");
-    ficha.className = "ficha-avatar";
+    ficha.className = "ficha-avatar polaroid";
     ficha.id = `ficha-${j.id}`;
+    ficha.style.setProperty("--rot", rotacionDe(j.id));
     ficha.innerHTML = `
       <img class="cara" src="${av.img}" alt="">
       <span class="nombre-ficha">${escaparHTML(j.nombre)}</span>`;
@@ -588,10 +620,11 @@ function dibujarJuicio() {
     if (j.id === estado.contactadoId) return;
     const boton = document.createElement("button");
     boton.className = "sospechoso";
+    boton.style.setProperty("--rot", rotacionDe(j.id));
     const av = AVATARES[j.avatar] || AVATARES[0];
     boton.innerHTML = `
       <img class="cara" src="${av.img}" alt="">
-      <span>${escaparHTML(j.nombre)}${j.id === estado.tuId ? " (VOS)" : ""}</span>`;
+      <span>${escaparHTML(j.nombre)}${j.id === estado.tuId ? " (vos)" : ""}</span>`;
     boton.onclick = () => {
       if (votoEmitido) return;
       votoEmitido = true;
@@ -612,7 +645,16 @@ function dibujarFinal(resultado) {
       ? ":: MENSAJE DESCIFRADO ::"
       : ":: METAMORFO IDENTIFICADO ::"
     : ":: VICTORIA DEL METAMORFO ::";
-  $("titulo-final").style.color = gananHumanos ? "#33ff66" : "#cc2a1f";
+  $("titulo-final").style.color = gananHumanos ? "#33ff66" : "#ff5040";
+  $("titulo-final").style.textShadow = gananHumanos
+    ? "0 0 10px rgba(51,255,102,0.6)"
+    : "0 0 10px rgba(255,80,64,0.6)";
+
+  // En la derrota, el alien se muestra entero por primera vez.
+  $("alien-final").hidden = gananHumanos;
+  if (gananHumanos) Sonido.exito();
+  else Sonido.derrota();
+  if (navigator.vibrate) navigator.vibrate(gananHumanos ? [80, 60, 80] : [250]);
 
   $("detalle-final").textContent = gananHumanos
     ? "LA HUMANIDAD ESTABLECIÓ PRIMER CONTACTO."
@@ -623,7 +665,7 @@ function dibujarFinal(resultado) {
   palabra.textContent = `LA PALABRA ERA: ${(resultado.palabra || "?").toUpperCase()}`;
   const meta = document.createElement("p");
   meta.textContent = `EL METAMORFO ERA: ${nombreDe(resultado.metamorfoId)}`;
-  meta.style.color = "#cc2a1f";
+  meta.style.color = "#ff5040";
   $("revelacion-final").append(palabra, meta);
 
   const lista = $("recuento-votos");
@@ -701,3 +743,33 @@ document.querySelectorAll("#selector-dificultad button").forEach((boton) => {
 });
 
 armarGrillaAvatares();
+
+// ─── El aparato: encendido, perilla de audio y clicks mecánicos ───
+
+// Animación de encendido del tubo, una sola vez por sesión.
+if (!sessionStorage.getItem("pc-encendido")) {
+  sessionStorage.setItem("pc-encendido", "1");
+  const encendido = $("encendido");
+  encendido.hidden = false;
+  setTimeout(() => encendido.remove(), 1300);
+} else {
+  $("encendido").remove();
+}
+
+function actualizarPerilla(encendido) {
+  $("perilla-audio").classList.toggle("activa", encendido);
+  $("etiqueta-audio").textContent = `AUDIO: ${encendido ? "ON" : "OFF"}`;
+}
+
+$("perilla-audio").onclick = () => {
+  const encendido = Sonido.alternar();
+  actualizarPerilla(encendido);
+  if (encendido) Sonido.encendidoCRT();
+};
+
+actualizarPerilla(Sonido.quiereAudio());
+
+// Todo botón del aparato hace click mecánico al presionarse.
+document.addEventListener("pointerdown", (evento) => {
+  if (evento.target.closest("button")) Sonido.click();
+});
