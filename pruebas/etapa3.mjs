@@ -115,6 +115,22 @@ console.log("— ESCENARIO A: revelación y victoria por descifrado —");
   await espera(300);
   ok(!faseDe(ana, "final"), "votar fuera del juicio se ignora");
 
+  // La respuesta citada: el contactado responde A una pregunta concreta.
+  await espera(700); // deja pasar el anti-spam
+  investigadores[0].enviar({ tipo: "enviar", texto: "¿vuela de noche?" });
+  await espera(300);
+  const pregunta = ultimo(investigadores[1], "mensaje");
+  ok(typeof pregunta?.id === "number", "los mensajes llevan número de cita");
+  contactado.enviar({ tipo: "respuesta", valor: "inestable", refId: pregunta.id });
+  await espera(300);
+  const citada = ultimo(investigadores[1], "sistema");
+  ok(
+    citada?.texto.includes("«¿vuela de noche?»") &&
+    citada?.texto.includes(investigadores[0].nombre.toUpperCase()) &&
+    citada?.texto.includes("SEÑAL INESTABLE"),
+    "la respuesta cita la pregunta y a su autor"
+  );
+
   // El metamorfo comete el error fatal: escribe la palabra
   // (en mayúsculas y sin tildes, para probar la normalización).
   const delatada = normalizar(contactado.palabra).toUpperCase();

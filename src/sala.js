@@ -484,8 +484,11 @@ export class Sala extends DurableObject {
     const texto = String(msg.texto ?? "").trim().slice(0, MAX_MENSAJE);
     if (!texto) return;
 
+    // Cada mensaje lleva un número: el Contactado responde citándolo.
+    this.contadorMensajes = (this.contadorMensajes || 0) + 1;
     const mensaje = {
       tipo: "mensaje",
+      id: this.contadorMensajes,
       jugadorId: yo.id,
       nombre: yo.nombre,
       color: yo.color,
@@ -527,7 +530,21 @@ export class Sala extends DurableObject {
     if (this.ultimaRespuesta && ahora - this.ultimaRespuesta < PAUSA_RESPUESTA) return;
     this.ultimaRespuesta = ahora;
 
-    this.sistema(`EL CONTACTADO RESPONDE: ${RESPUESTAS[msg.valor]}`, msg.valor);
+    // Si el Contactado citó una pregunta, la respuesta la nombra:
+    // así nadie duda de qué se está respondiendo.
+    let referencia = "";
+    if (msg.refId != null && this.historial) {
+      const citada = this.historial.find(
+        (l) => l.tipo === "mensaje" && l.id === msg.refId
+      );
+      if (citada) {
+        const corto =
+          citada.texto.length > 60 ? citada.texto.slice(0, 60) + "…" : citada.texto;
+        referencia = ` A ${citada.nombre.toUpperCase()} («${corto}»)`;
+      }
+    }
+
+    this.sistema(`EL CONTACTADO RESPONDE${referencia}: ${RESPUESTAS[msg.valor]}`, msg.valor);
   }
 
   // ─── Acciones de riesgo (botón EMERGENCIA, un uso por partida) ───

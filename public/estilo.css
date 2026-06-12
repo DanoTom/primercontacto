@@ -665,7 +665,38 @@ button.peligro:active:not(:disabled), #boton-emergencia:active:not(:disabled) {
 
 #terminal::after { position: sticky; display: block; height: 0; }
 
-.linea-historial { white-space: pre-wrap; position: relative; z-index: 1; }
+.linea-historial {
+  white-space: pre-wrap;
+  position: relative;
+  z-index: 1;
+  margin-bottom: 3px;
+}
+
+/* Para el Contactado: las preguntas se tocan para citarlas */
+.respondible {
+  cursor: pointer;
+  border-radius: 4px;
+  padding: 2px 4px;
+  margin-left: -4px;
+}
+
+.respondible.elegida {
+  background: rgba(255, 176, 0, 0.14);
+  outline: 1px dashed rgba(255, 176, 0, 0.6);
+}
+
+/* Separador entre el historial y las líneas vivas */
+#lineas-vivas:not(:empty)::before {
+  content: "· · · EN VIVO · · ·";
+  display: block;
+  font-size: 11px;
+  letter-spacing: 2px;
+  color: var(--fosforo-apagado);
+  opacity: 0.7;
+  margin: 6px 0 2px;
+  position: relative;
+  z-index: 1;
+}
 
 .linea-viva {
   white-space: pre-wrap;
@@ -681,6 +712,7 @@ button.peligro:active:not(:disabled), #boton-emergencia:active:not(:disabled) {
   text-shadow: 0 0 6px rgba(255, 176, 0, 0.45);
   position: relative;
   z-index: 1;
+  margin: 6px 0;
 }
 
 .cursor { animation: parpadeo 1s steps(1) infinite; }
@@ -711,6 +743,17 @@ button.peligro:active:not(:disabled), #boton-emergencia:active:not(:disabled) {
 
 /* Botón EMERGENCIA */
 #zona-emergencia { display: flex; flex-direction: column; gap: 4px; }
+
+/* Blindaje táctil: mantener presionado NO debe disparar el menú
+   contextual, la selección de texto ni el scroll del navegador
+   (eso cancelaba el gesto en los celulares). */
+#boton-emergencia {
+  touch-action: none;
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+  -webkit-tap-highlight-color: transparent;
+}
 
 #boton-emergencia.cargando { animation: carga-emergencia 1s linear forwards; }
 

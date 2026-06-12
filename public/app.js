@@ -30,8 +30,8 @@ const ROLES = {
   contactado: {
     titulo: "CONTACTADO",
     descripcion:
-      "CONOCÉS LA PALABRA, PERO NO TENÉS TECLADO. RESPONDÉ A LAS " +
-      "PREGUNTAS DE LA TERMINAL SOLO CON TUS 5 BOTONES.",
+      "CONOCÉS LA PALABRA, PERO NO TENÉS TECLADO. TOCÁ UNA PREGUNTA " +
+      "EN LA TERMINAL Y RESPONDELA CON TUS 5 BOTONES.",
   },
   metamorfo: {
     titulo: "METAMORFO",
@@ -438,8 +438,9 @@ function prepararPartida() {
   // La máquina recuerda el protocolo al abrir el canal.
   const arranque = [
     "CANAL ABIERTO. LA SEÑAL ES LIMITADA.",
+    "SILENCIO EN LA SALA: TODO PASA POR LA TERMINAL.",
     estado.miRol === "contactado"
-      ? "RESPONDÉ A LAS PREGUNTAS SOLO CON TUS CONTROLES."
+      ? "TOCÁ UNA PREGUNTA Y RESPONDELA CON TUS CONTROLES."
       : "INTERROGUEN AL CONTACTADO: PREGUNTAS DE SÍ O NO.",
     "ADVERTENCIA: HAY UN METAMORFO ENTRE USTEDES.",
   ];
@@ -464,6 +465,8 @@ function prepararPartida() {
   document.querySelectorAll("#botones-respuesta button").forEach((b) => {
     b.disabled = false;
   });
+  estado.refSeleccionada = null;
+  pintarNotaContactado();
 
   // El tecleo se transmite agrupado cada ~100 ms (no tecla por tecla),
   // pero en pantalla se siente en vivo, borrones incluidos.
@@ -488,10 +491,40 @@ function agregarAlHistorial(msg) {
   const texto = document.createElement("span");
   texto.textContent = msg.texto;
   linea.append(nombre, texto);
+
+  // El Contactado responde citando: toca una pregunta y la selecciona.
+  if (estado.miRol === "contactado" && msg.id != null) {
+    linea.classList.add("respondible");
+    linea.onclick = () => seleccionarPregunta(linea, msg);
+  }
+
   $("historial").appendChild(linea);
 
   const term = $("terminal");
   term.scrollTop = term.scrollHeight;
+}
+
+function seleccionarPregunta(linea, msg) {
+  const previa = $("historial").querySelector(".elegida");
+  if (previa) previa.classList.remove("elegida");
+
+  if (estado.refSeleccionada?.id === msg.id) {
+    // tocar de nuevo des-selecciona
+    estado.refSeleccionada = null;
+    pintarNotaContactado();
+    return;
+  }
+  estado.refSeleccionada = { id: msg.id, nombre: msg.nombre, texto: msg.texto };
+  linea.classList.add("elegida");
+  pintarNotaContactado();
+}
+
+function pintarNotaContactado() {
+  if (estado.miRol !== "contactado") return;
+  const ref = estado.refSeleccionada;
+  $("nota-contactado").textContent = ref
+    ? `RESPONDIENDO A ${ref.nombre.toUpperCase()}: «${ref.texto.slice(0, 60)}»`
+    : "TOCÁ UNA PREGUNTA DE LA TERMINAL Y RESPONDELA CON TUS BOTONES.";
 }
 
 function agregarLineaSistema(texto, silencioso = false) {
@@ -541,7 +574,16 @@ $("form-mensaje").onsubmit = (evento) => {
 
 document.querySelectorAll("#botones-respuesta button").forEach((boton) => {
   boton.onclick = () => {
-    estado.ws.send(JSON.stringify({ tipo: "respuesta", valor: boton.dataset.valor }));
+    estado.ws.send(JSON.stringify({
+      tipo: "respuesta",
+      valor: boton.dataset.valor,
+      refId: estado.refSeleccionada?.id,
+    }));
+    // La cita se consume con la respuesta.
+    estado.refSeleccionada = null;
+    const previa = $("historial").querySelector(".elegida");
+    if (previa) previa.classList.remove("elegida");
+    pintarNotaContactado();
   };
 });
 
@@ -580,7 +622,7 @@ function sufrirInterferencia(duracionMs) {
   if (navigator.vibrate) navigator.vibrate([60, 40, 60]);
   setTimeout(() => {
     botones.forEach((b) => (b.disabled = false));
-    $("nota-contactado").textContent = "";
+    pintarNotaContactado();
   }, duracionMs);
 }
 
@@ -661,6 +703,9 @@ function armarBotonEmergencia() {
   boton.addEventListener("pointerup", soltar);
   boton.addEventListener("pointerleave", soltar);
   boton.addEventListener("pointercancel", soltar);
+  // En celulares, mantener presionado dispara el menú contextual del
+  // navegador y cancela el gesto: hay que comérselo.
+  boton.addEventListener("contextmenu", (e) => e.preventDefault());
   // Accesibilidad: con teclado, Enter o Espacio abren la confirmación.
   boton.addEventListener("keydown", (e) => {
     if ((e.key === "Enter" || e.key === " ") && !boton.disabled) {
