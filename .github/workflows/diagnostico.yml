@@ -11,7 +11,15 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
       - run: npm ci
+
+      - name: Prueba multijugador contra producción (5 jugadores)
+        env:
+          BASE_URL: https://primer-contacto.danotommasi.workers.dev
+        run: node pruebas/produccion.mjs
 
       - name: Probar endpoints con tail activo
         env:
