@@ -20,6 +20,8 @@
       <div id="mensaje-inicio" class="mensaje" role="alert"></div>
     </div>
 
+    <button id="boton-instrucciones">¿CÓMO SE JUEGA?</button>
+
     <label for="campo-nombre">IDENTIFICACIÓN DEL OPERADOR</label>
     <input id="campo-nombre" type="text" maxlength="12" autocomplete="off"
            placeholder="TU NOMBRE (MÁX. 12)">
@@ -161,6 +163,44 @@
     <div class="tarjeta-overlay">
       <p class="subtitulo-fosforo">NUEVA PALABRA INTERCEPTADA</p>
       <div id="palabra-nueva"></div>
+    </div>
+  </div>
+
+  <!-- Manual de operaciones -->
+  <div id="overlay-instrucciones" class="overlay" hidden>
+    <div class="manual">
+      <h2>:: MANUAL DE OPERACIONES ::</h2>
+
+      <h3>LA SITUACIÓN</h3>
+      <p>INTERCEPTAMOS UNA TRANSMISIÓN ALIENÍGENA: UNA PALABRA SECRETA.
+      HAY 5 MINUTOS DE SEÑAL PARA DESCIFRARLA.</p>
+
+      <h3>LOS ROLES (SE ASIGNAN AL AZAR)</h3>
+      <p>▸ EL CONTACTADO CONOCE LA PALABRA. NO TIENE TECLADO: RESPONDE
+      SOLO CON SUS 5 BOTONES (SÍ, NO, SEÑAL INESTABLE, FUERTE, DÉBIL).</p>
+      <p>▸ LOS INVESTIGADORES LE HACEN PREGUNTAS DE SÍ O NO POR LA
+      TERMINAL PARA ADIVINAR LA PALABRA.</p>
+      <p>▸ EL METAMORFO TAMBIÉN CONOCE LA PALABRA, PERO FINGE SER UN
+      INVESTIGADOR: HACE PREGUNTAS INÚTILES PARA QUEMAR EL RELOJ.
+      NADIE SABE QUIÉN ES.</p>
+
+      <h3>CÓMO SE GANA</h3>
+      <p>▸ SI ALGUIEN ESCRIBE LA PALABRA EXACTA EN LA TERMINAL,
+      GANAN LOS HUMANOS AL INSTANTE.</p>
+      <p>▸ SI EL RELOJ LLEGA A CERO, HAY VOTACIÓN SECRETA: ¿QUIÉN ES EL
+      METAMORFO? SI EL MÁS VOTADO ES ÉL, GANAN LOS HUMANOS. SI HAY
+      EMPATE O VOTAN A UN INOCENTE, GANA EL METAMORFO.</p>
+
+      <h3>LA REGLA DE ORO</h3>
+      <p>TODOS VEN LO QUE TODOS TECLEAN, LETRA POR LETRA, BORRONES
+      INCLUIDOS. ESCRIBIR ES ACTUAR. DUDAR ES EVIDENCIA.</p>
+
+      <h3>EL BOTÓN ROJO</h3>
+      <p>CADA ROL TIENE UNA ACCIÓN DE EMERGENCIA DE UN SOLO USO.
+      MANTENELO PRESIONADO PARA DESCUBRIR LA TUYA. TODA AYUDA
+      TIENE UN COSTO.</p>
+
+      <button id="boton-cerrar-instrucciones" class="principal">ENTENDIDO</button>
     </div>
   </div>
 

@@ -435,6 +435,21 @@ function prepararPartida() {
   $("campo-mensaje").value = "";
   dibujarAvatares();
 
+  // La máquina recuerda el protocolo al abrir el canal.
+  const arranque = [
+    "CANAL ABIERTO. LA SEÑAL ES LIMITADA.",
+    estado.miRol === "contactado"
+      ? "RESPONDÉ A LAS PREGUNTAS SOLO CON TUS CONTROLES."
+      : "INTERROGUEN AL CONTACTADO: PREGUNTAS DE SÍ O NO.",
+    "ADVERTENCIA: HAY UN METAMORFO ENTRE USTEDES.",
+  ];
+  arranque.forEach((texto) => {
+    const linea = document.createElement("div");
+    linea.className = "linea-arranque";
+    linea.textContent = `· ${texto}`;
+    $("historial").appendChild(linea);
+  });
+
   // El botón EMERGENCIA arranca cargado en cada partida.
   const emergencia = $("boton-emergencia");
   emergencia.disabled = false;
@@ -832,6 +847,14 @@ $("perilla-audio").onclick = () => {
 actualizarPerilla(Sonido.quiereAudio());
 // La pantalla inicial ya pide música (sonará cuando se encienda el audio).
 Sonido.musica(true);
+
+// El manual de operaciones.
+$("boton-instrucciones").onclick = () => {
+  $("overlay-instrucciones").hidden = false;
+};
+$("boton-cerrar-instrucciones").onclick = () => {
+  $("overlay-instrucciones").hidden = true;
+};
 
 // Todo botón del aparato hace click mecánico al presionarse.
 document.addEventListener("pointerdown", (evento) => {
