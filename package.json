@@ -3,11 +3,12 @@
   "version": "0.2.0",
   "private": true,
   "description": "Río Manso: juego web multijugador de supervivencia por desafíos, con estética retro sci-fi",
+  "type": "module",
   "scripts": {
     "dev": "wrangler dev",
     "dev:prueba": "wrangler dev --var MODO_PRUEBA:1",
     "deploy": "wrangler deploy",
-    "probar": "node pruebas/riomanso.mjs"
+    "probar": "node pruebas/contenido.mjs && node pruebas/riomanso.mjs"
   },
   "devDependencies": {
     "wrangler": "^4.99.0"

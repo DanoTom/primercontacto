@@ -236,25 +236,37 @@ function dibujarDesafio(tipo, datos, soyVivo) {
   const zona = $("zona-desafio");
   zona.innerHTML = "";
 
+  // La pieza grande de arriba cambia según el desafío.
   if (tipo === "stroop") {
     const palabra = document.createElement("div");
     palabra.className = "palabra-stroop";
     palabra.style.color = datos.tinta;
     palabra.textContent = datos.palabra;
     zona.appendChild(palabra);
-
-    const grilla = document.createElement("div");
-    grilla.className = "opciones-desafio";
-    datos.opciones.forEach((op) => {
-      const b = document.createElement("button");
-      b.className = "opcion";
-      b.textContent = op.nombre;
-      b.disabled = !soyVivo;
-      b.onclick = () => responder(op.id, b);
-      grilla.appendChild(b);
-    });
-    zona.appendChild(grilla);
+  } else if (tipo === "calculo") {
+    const exp = document.createElement("div");
+    exp.className = "expresion-desafio";
+    exp.textContent = `${datos.expresion} = ?`;
+    zona.appendChild(exp);
+  } else if (tipo === "patron") {
+    const sec = document.createElement("div");
+    sec.className = "secuencia-desafio";
+    sec.textContent = datos.secuencia;
+    zona.appendChild(sec);
   }
+
+  // Las opciones (botones) son comunes a todos los desafíos.
+  const grilla = document.createElement("div");
+  grilla.className = "opciones-desafio" + (tipo === "intruso" ? " intruso" : "");
+  datos.opciones.forEach((op) => {
+    const b = document.createElement("button");
+    b.className = "opcion";
+    b.textContent = op.nombre;
+    b.disabled = !soyVivo;
+    b.onclick = () => responder(op.id, b);
+    grilla.appendChild(b);
+  });
+  zona.appendChild(grilla);
 }
 
 function responder(valor, boton) {

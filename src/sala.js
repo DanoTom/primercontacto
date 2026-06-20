@@ -283,7 +283,7 @@ export class Sala extends DurableObject {
   async iniciarRonda() {
     const total = this.duraciones().rondas;
     const ronda = (await this.leer("ronda", 0)) + 1;
-    const desafio = elegirDesafio(ronda);
+    const desafio = elegirDesafio(ronda, this.env.MODO_PRUEBA === "1");
     const duracion = this.rondaMs(ronda);
     const finFase = Date.now() + duracion;
 
