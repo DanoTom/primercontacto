@@ -4,205 +4,126 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta name="theme-color" content="#d6cbb4">
-  <title>PRIMER CONTACTO</title>
+  <title>RÍO MANSO</title>
   <link rel="stylesheet" href="estilo.css">
 </head>
 <body>
 
-  <!-- Encendido del tubo (una vez por sesión) -->
   <div id="encendido" hidden></div>
 
-  <!-- ═══ PANTALLA: INICIO ═══ -->
+  <!-- ═══ INICIO ═══ -->
   <section id="pantalla-inicio" class="pantalla activa">
     <div class="monitor">
-      <h1 class="titulo-juego">PRIMER<br>CONTACTO</h1>
-      <p class="subtitulo-fosforo">ESTACIÓN DE INTERCEPCIÓN DE SEÑALES</p>
+      <h1 class="titulo-juego">RÍO<br>MANSO</h1>
+      <p class="subtitulo-fosforo">SOBREVIVÍ A LA NOCHE EN LA CABAÑA</p>
       <div id="mensaje-inicio" class="mensaje" role="alert"></div>
     </div>
 
     <button id="boton-instrucciones">¿CÓMO SE JUEGA?</button>
 
-    <label for="campo-nombre">IDENTIFICACIÓN DEL OPERADOR</label>
+    <label for="campo-nombre">TU NOMBRE</label>
     <input id="campo-nombre" type="text" maxlength="12" autocomplete="off"
            placeholder="TU NOMBRE (MÁX. 12)">
 
-    <label>FICHA DEL PERSONAL</label>
+    <label>ELEGÍ TU FOTO</label>
     <div id="grilla-avatares"></div>
 
     <div class="acciones">
-      <button id="boton-crear" class="principal">CREAR SALA</button>
+      <button id="boton-crear" class="principal">CREAR PARTIDA</button>
       <div class="separador">▪ ▪ ▪</div>
       <input id="campo-codigo" type="text" maxlength="4" autocomplete="off"
-             placeholder="CÓDIGO" class="campo-codigo" aria-label="Código de sala">
-      <button id="boton-unirse">UNIRSE A SALA</button>
+             placeholder="CÓDIGO" class="campo-codigo" aria-label="Código de partida">
+      <button id="boton-unirse">UNIRSE</button>
     </div>
 
-    <p class="placa">INTERCEPTOR DOMÉSTICO MK-II · HECHO EN EL GARAJE · IND. ARG.</p>
+    <p class="placa">RÍO MANSO · TRANSMISIÓN NOCTURNA · NO MIRES EL AGUA</p>
   </section>
 
-  <!-- ═══ PANTALLA: LOBBY ═══ -->
+  <!-- ═══ LOBBY ═══ -->
   <section id="pantalla-lobby" class="pantalla">
     <div class="monitor">
-      <p class="subtitulo-fosforo">CÓDIGO DE ACCESO — COMPARTILO CON TU EQUIPO</p>
+      <p class="subtitulo-fosforo">CÓDIGO DE LA CABAÑA — COMPARTILO</p>
       <div id="codigo-sala" class="codigo-grande"></div>
       <div id="conteo-lobby" class="conteo"></div>
       <div id="nota-iniciar" class="mensaje"></div>
     </div>
 
-    <label>PERSONAL EN LA ESTACIÓN</label>
+    <label>EN LA CABAÑA</label>
     <ul id="lista-jugadores"></ul>
 
-    <label>DIFICULTAD DE LA TRANSMISIÓN</label>
-    <div id="selector-dificultad">
-      <button data-dif="facil">FÁCIL</button>
-      <button data-dif="media" class="elegido">MEDIA</button>
-      <button data-dif="dificil">DIFÍCIL</button>
-    </div>
-
     <div id="zona-audio">
-      <button id="perilla-audio" aria-label="Encender o apagar el sonido del aparato"></button>
+      <button id="perilla-audio" aria-label="Encender o apagar el sonido"></button>
       <span class="etiqueta-panel" id="etiqueta-audio">AUDIO: OFF</span>
     </div>
 
-    <button id="boton-iniciar" class="principal" hidden>INICIAR TRANSMISIÓN</button>
+    <button id="boton-iniciar" class="principal" hidden>EMPEZAR LA NOCHE</button>
   </section>
 
-  <!-- ═══ PANTALLA: REVELACIÓN DE ROL ═══ -->
-  <section id="pantalla-revelacion" class="pantalla">
-    <p class="subtitulo">⚠ ASEGURATE DE QUE NADIE MIRE TU PANTALLA ⚠</p>
-
-    <div id="tarjeta-rol" class="monitor">
-      <p class="subtitulo-fosforo">TRANSMISIÓN ENTRANTE — TU ROL:</p>
-      <div id="rol-titulo"></div>
-      <img id="alien-revelacion" src="img/extraterrestre.png" alt="" hidden>
-      <p id="rol-descripcion"></p>
-      <div id="rol-palabra" hidden>
-        <p class="subtitulo-fosforo">PALABRA INTERCEPTADA</p>
-        <div id="palabra-secreta"></div>
-      </div>
-      <div id="conteo-confirmados" class="mensaje"></div>
-    </div>
-
-    <button id="boton-entendido" class="principal">ENTENDIDO</button>
-  </section>
-
-  <!-- ═══ PANTALLA: PARTIDA ═══ -->
-  <section id="pantalla-partida" class="pantalla">
-    <div id="banda-superior">
-      <div id="reloj">05:00</div>
-      <div id="indicador-senal">SEÑAL ACTIVA</div>
-    </div>
-
-    <div id="panel-avatares"></div>
-
-    <div id="terminal" class="monitor" aria-live="polite">
-      <div id="historial"></div>
-      <div id="lineas-vivas"></div>
-    </div>
-
-    <form id="form-mensaje" autocomplete="off">
-      <input id="campo-mensaje" type="text" maxlength="200"
-             placeholder="ESCRIBÍ EN LA TERMINAL..." autocomplete="off">
-      <button type="submit" id="boton-transmitir">TX</button>
-    </form>
-
-    <div id="panel-contactado" hidden>
-      <div id="botones-respuesta">
-        <button data-valor="si" class="respuesta">SÍ</button>
-        <button data-valor="no" class="respuesta">NO</button>
-        <button data-valor="inestable" class="respuesta">SEÑAL INESTABLE</button>
-        <button data-valor="fuerte" class="respuesta">SEÑAL FUERTE</button>
-        <button data-valor="debil" class="respuesta">SEÑAL DÉBIL</button>
-      </div>
-      <div id="nota-contactado" class="mensaje"></div>
-    </div>
-
-    <div id="zona-emergencia">
-      <button id="boton-emergencia" type="button">⚠ EMERGENCIA</button>
-      <div id="nota-emergencia" class="mensaje"></div>
-    </div>
-  </section>
-
-  <!-- ═══ PANTALLA: JUICIO FINAL ═══ -->
-  <section id="pantalla-juicio" class="pantalla">
+  <!-- ═══ INTRO ═══ -->
+  <section id="pantalla-intro" class="pantalla">
     <div class="monitor">
-      <h1>:: JUICIO FINAL ::</h1>
-      <p class="subtitulo-fosforo">SE PERDIÓ LA SEÑAL. ¿QUIÉN ES EL METAMORFO?</p>
-      <div id="reloj-juicio" class="codigo-grande"></div>
-      <div id="estado-votos" class="mensaje"></div>
+      <div id="intro-texto"></div>
     </div>
-
-    <label>SEÑALÁ LA FOTO DEL SOSPECHOSO</label>
-    <div id="lista-sospechosos"></div>
   </section>
 
-  <!-- ═══ PANTALLA: RESULTADO ═══ -->
+  <!-- ═══ RONDA / DESAFÍO ═══ -->
+  <section id="pantalla-ronda" class="pantalla">
+    <div id="banda-superior">
+      <div id="reloj">00:00</div>
+      <div id="marcador-ronda">RONDA —</div>
+      <div id="marcador-vivos">◊ —</div>
+    </div>
+
+    <div class="monitor" id="monitor-desafio">
+      <p id="enunciado-desafio" class="subtitulo-fosforo"></p>
+      <div id="zona-desafio"></div>
+      <div id="estado-respuesta" class="mensaje"></div>
+    </div>
+
+    <div id="progreso-ronda" class="conteo"></div>
+  </section>
+
+  <!-- ═══ RESOLUCIÓN ═══ -->
+  <section id="pantalla-resolucion" class="pantalla">
+    <div class="monitor">
+      <h1 id="titulo-resolucion"></h1>
+      <div id="detalle-resolucion"></div>
+      <div id="desaparecidos-lista"></div>
+    </div>
+  </section>
+
+  <!-- ═══ FINAL ═══ -->
   <section id="pantalla-final" class="pantalla">
     <div class="monitor">
       <h1 id="titulo-final"></h1>
       <p id="detalle-final"></p>
-      <img id="alien-final" src="img/extraterrestre.png" alt="El Metamorfo revela su forma" hidden>
-      <div id="revelacion-final"></div>
-      <ul id="recuento-votos"></ul>
+      <div id="sobrevivientes-lista"></div>
     </div>
     <button id="boton-revancha" class="principal">JUGAR DE NUEVO</button>
   </section>
 
-  <!-- Confirmación de la acción de riesgo (tras mantener 1 segundo) -->
-  <div id="overlay-emergencia" class="overlay" hidden>
-    <div class="tarjeta-overlay">
-      <div id="emergencia-titulo" class="titulo-overlay"></div>
-      <p id="emergencia-descripcion"></p>
-      <button id="boton-confirmar-emergencia" class="peligro">CONFIRMAR</button>
-      <button id="boton-cancelar-emergencia">CANCELAR</button>
-    </div>
-  </div>
-
-  <!-- Superposición privada de 3 segundos tras el Reinicio de Sistema -->
-  <div id="overlay-palabra" class="overlay" hidden>
-    <div class="tarjeta-overlay">
-      <p class="subtitulo-fosforo">NUEVA PALABRA INTERCEPTADA</p>
-      <div id="palabra-nueva"></div>
-    </div>
-  </div>
-
-  <!-- Manual de operaciones -->
+  <!-- Manual -->
   <div id="overlay-instrucciones" class="overlay" hidden>
     <div class="manual">
-      <h2>:: MANUAL DE OPERACIONES ::</h2>
+      <h2>:: CÓMO SE JUEGA ::</h2>
 
-      <h3>LA SITUACIÓN</h3>
-      <p>INTERCEPTAMOS UNA TRANSMISIÓN ALIENÍGENA: UNA PALABRA SECRETA.
-      HAY 5 MINUTOS DE SEÑAL PARA DESCIFRARLA.</p>
+      <h3>LA NOCHE</h3>
+      <p>UN GRUPO DE AMIGOS EN UNA CABAÑA JUNTO AL RÍO MANSO. EMPIEZAN
+      LAS DESAPARICIONES. UN VIEJO APARATO LES PRESENTA PRUEBAS.</p>
 
-      <h3>LOS ROLES (SE ASIGNAN AL AZAR)</h3>
-      <p>▸ EL CONTACTADO CONOCE LA PALABRA. NO TIENE TECLADO: TOCA UNA
-      PREGUNTA DE LA TERMINAL Y LA RESPONDE CON SUS 5 BOTONES (SÍ, NO,
-      SEÑAL INESTABLE, FUERTE, DÉBIL).</p>
-      <p>▸ LOS INVESTIGADORES LE HACEN PREGUNTAS DE SÍ O NO POR LA
-      TERMINAL PARA ADIVINAR LA PALABRA.</p>
-      <p>▸ EL METAMORFO TAMBIÉN CONOCE LA PALABRA, PERO FINGE SER UN
-      INVESTIGADOR: HACE PREGUNTAS INÚTILES PARA QUEMAR EL RELOJ.
-      NADIE SABE QUIÉN ES.</p>
+      <h3>LAS PRUEBAS</h3>
+      <p>CADA RONDA ES UN DESAFÍO DE RAPIDEZ CONTRA RELOJ (POR EJEMPLO:
+      «¿DE QUÉ COLOR ESTÁ PINTADA ESTA PALABRA?»). TOCÁ TU RESPUESTA
+      ANTES DE QUE SE ACABE EL TIEMPO.</p>
+
+      <h3>EL RÍO SE LLEVA A LOS QUE FALLAN</h3>
+      <p>SI ERRÁS O NO CONTESTÁS A TIEMPO, EL RÍO MANSO TE DESAPARECE.
+      EL RELOJ SE ACORTA RONDA A RONDA: CADA VEZ MÁS DIFÍCIL.</p>
 
       <h3>CÓMO SE GANA</h3>
-      <p>▸ SI ALGUIEN ESCRIBE LA PALABRA EXACTA EN LA TERMINAL,
-      GANAN LOS HUMANOS AL INSTANTE.</p>
-      <p>▸ SI EL RELOJ LLEGA A CERO, HAY VOTACIÓN SECRETA: ¿QUIÉN ES EL
-      METAMORFO? SI EL MÁS VOTADO ES ÉL, GANAN LOS HUMANOS. SI HAY
-      EMPATE O VOTAN A UN INOCENTE, GANA EL METAMORFO.</p>
-
-      <h3>LA REGLA DE ORO</h3>
-      <p>NADIE HABLA EN VOZ ALTA: TODA LA COMUNICACIÓN PASA POR LA
-      TERMINAL. TODOS VEN LO QUE TODOS TECLEAN, LETRA POR LETRA,
-      BORRONES INCLUIDOS. ESCRIBIR ES ACTUAR. DUDAR ES EVIDENCIA.</p>
-      <p>SI HABLAN EN VOZ ALTA, EL METAMORFO NO TIENE DÓNDE ESCONDERSE
-      Y EL JUEGO SE ROMPE. SILENCIO: SON INVESTIGADORES, NO UNA PEÑA.</p>
-
-      <h3>EL BOTÓN ROJO</h3>
-      <p>CADA ROL TIENE UNA ACCIÓN DE EMERGENCIA DE UN SOLO USO.
-      MANTENELO PRESIONADO PARA DESCUBRIR LA TUYA. TODA AYUDA
-      TIENE UN COSTO.</p>
+      <p>ES COLABORATIVO: SI AL MENOS UNA PERSONA LLEGA AL AMANECER,
+      GANA TODO EL GRUPO. SI EL RÍO SE LOS LLEVA A TODOS, PIERDEN.
+      PERO OJO: NADIE QUIERE SER EL PRÓXIMO.</p>
 
       <button id="boton-cerrar-instrucciones" class="principal">ENTENDIDO</button>
     </div>

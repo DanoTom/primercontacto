@@ -1031,3 +1031,153 @@ button.peligro:active:not(:disabled), #boton-emergencia:active:not(:disabled) {
     background: radial-gradient(ellipse at center, transparent 58%, rgba(0, 0, 0, 0.42) 100%);
   }
 }
+
+/* ═══════════════════════════════════════════════════════════════
+   RÍO MANSO — pantallas de juego
+   ═══════════════════════════════════════════════════════════════ */
+
+#pantalla-ronda {
+  height: 100vh;
+  height: 100dvh;
+  max-width: 640px;
+  padding: 14px 12px;
+  gap: 10px;
+}
+@media (min-width: 560px) {
+  #pantalla-ronda { height: auto; min-height: 92vh; }
+}
+
+#marcador-ronda, #marcador-vivos {
+  font-family: var(--fuente-panel);
+  font-weight: 700;
+  font-size: 12px;
+  letter-spacing: 2px;
+  color: var(--tinta);
+  text-shadow: 0 1px 0 rgba(255, 255, 255, 0.5);
+}
+
+#monitor-desafio {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 18px;
+  text-align: center;
+}
+
+#enunciado-desafio { margin: 0; }
+
+#zona-desafio {
+  position: relative;
+  z-index: 1;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 20px;
+}
+
+/* "El color miente": la palabra gigante, pintada de otro color */
+.palabra-stroop {
+  font-family: var(--fuente-panel);
+  font-weight: 700;
+  font-size: clamp(46px, 16vw, 86px);
+  letter-spacing: 3px;
+  line-height: 1;
+  text-shadow: 0 0 18px currentColor;
+}
+
+.opciones-desafio {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  width: 100%;
+  max-width: 360px;
+}
+
+/* Botones de respuesta: teclas de fósforo dentro del monitor */
+.opcion {
+  font-family: var(--fuente-monitor);
+  font-size: 22px;
+  letter-spacing: 2px;
+  width: 100%;
+  min-height: 56px;
+  color: var(--fosforo);
+  background: #0c1610;
+  border: 2px solid var(--fosforo-apagado);
+  border-radius: 8px;
+  box-shadow: inset 0 0 12px rgba(20, 80, 40, 0.4);
+  text-shadow: 0 0 6px rgba(51, 255, 102, 0.4);
+}
+.opcion:active:not(:disabled) {
+  background: var(--fosforo-apagado);
+  color: #06120a;
+}
+.opcion.elegida {
+  border-color: var(--ambar);
+  color: var(--ambar);
+  box-shadow: inset 0 0 16px rgba(255, 176, 0, 0.4);
+}
+.opcion:disabled { opacity: 0.5; }
+
+#progreso-ronda { min-height: 18px; }
+
+/* Intro narrativa: líneas que imprime el aparato */
+#intro-texto {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  min-height: 200px;
+  justify-content: center;
+}
+.linea-intro {
+  font-family: var(--fuente-monitor);
+  font-size: 20px;
+  line-height: 1.35;
+  margin: 0;
+  text-align: center;
+  animation: aparecer-linea 0.5s ease-out;
+}
+@keyframes aparecer-linea {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: none; }
+}
+
+/* Resolución */
+#titulo-resolucion { font-size: 26px; letter-spacing: 2px; position: relative; z-index: 1; }
+.dato-resolucion {
+  font-family: var(--fuente-monitor);
+  font-size: 24px;
+  letter-spacing: 4px;
+  color: var(--ambar);
+  text-shadow: 0 0 8px rgba(255, 176, 0, 0.5);
+  margin: 8px 0;
+}
+#detalle-resolucion, #desaparecidos-lista { position: relative; z-index: 1; }
+.desaparecido {
+  font-family: var(--fuente-monitor);
+  font-size: 19px;
+  color: #ff5040;
+  text-shadow: 0 0 8px rgba(255, 80, 64, 0.5);
+  margin: 6px 0;
+}
+
+/* Final: sobrevivientes */
+.fila-sobrevivientes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+  justify-content: center;
+  margin-top: 10px;
+  position: relative;
+  z-index: 1;
+}
+.fila-sobrevivientes .polaroid { width: 96px; }
+.fila-sobrevivientes .cara { width: 100%; aspect-ratio: 1; height: auto; }
+
+@media (prefers-reduced-motion: reduce) {
+  .linea-intro { animation: none; }
+}

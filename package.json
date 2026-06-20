@@ -1,13 +1,13 @@
 {
-  "name": "primer-contacto",
-  "version": "0.1.0",
+  "name": "rio-manso",
+  "version": "0.2.0",
   "private": true,
-  "description": "Juego web multijugador de deducción social con estética de aparato ochentoso",
+  "description": "Río Manso: juego web multijugador de supervivencia por desafíos, con estética retro sci-fi",
   "scripts": {
     "dev": "wrangler dev",
     "dev:prueba": "wrangler dev --var MODO_PRUEBA:1",
     "deploy": "wrangler deploy",
-    "probar": "node pruebas/etapa1.mjs && node pruebas/etapa2.mjs && node pruebas/etapa3.mjs && node pruebas/etapa4.mjs && node pruebas/etapa6.mjs"
+    "probar": "node pruebas/riomanso.mjs"
   },
   "devDependencies": {
     "wrangler": "^4.99.0"
