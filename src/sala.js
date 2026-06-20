@@ -131,6 +131,9 @@ export class Sala extends DurableObject {
       case "responder":
         await this.manejarResponder(ws, msg);
         break;
+      case "ayuda":
+        await this.manejarAyuda(ws, msg);
+        break;
       case "revancha":
         await this.manejarRevancha(ws);
         break;
@@ -218,6 +221,9 @@ export class Sala extends DurableObject {
       vivos,
       soyVivo: vivos.includes(entrada.id),
       yaRespondi: respuestas[entrada.id] != null,
+      tengoAyuda:
+        !vivos.includes(entrada.id) &&
+        !(await this.leer("ayudasUsadas", [])).includes(entrada.id),
       desafio: fase === "ronda" && desafio
         ? { tipo: desafio.tipo, enunciado: desafio.enunciado, datos: desafio.datos }
         : null,
@@ -291,6 +297,7 @@ export class Sala extends DurableObject {
       ronda,
       desafio, // incluye la respuesta correcta (secreta)
       respuestas: {},
+      escudos: [], // protecciones de fantasmas para esta ronda
       finFase,
     });
     await this.cambiarFase("ronda");
@@ -333,6 +340,63 @@ export class Sala extends DurableObject {
     }
   }
 
+  // Un fantasma (eliminado) gasta su única ayuda sobre un vivo:
+  // una PISTA (le tacha opciones malas) o un ESCUDO (lo salva si falla).
+  socketDe(id) {
+    for (const s of this.ctx.getWebSockets()) {
+      if (s.deserializeAttachment()?.id === id) return s;
+    }
+    return null;
+  }
+
+  async manejarAyuda(ws, msg) {
+    const yo = ws.deserializeAttachment();
+    if (!yo) return;
+    if ((await this.fase()) !== "ronda") return;
+
+    const vivos = await this.leer("vivos", []);
+    if (vivos.includes(yo.id)) return; // los vivos juegan, no dan ayudas
+    const plantel = await this.leer("plantel", {});
+    if (!plantel[yo.id]) return; // debe ser del plantel (un fantasma)
+
+    const usadas = await this.leer("ayudasUsadas", []);
+    if (usadas.includes(yo.id)) return; // una sola ayuda por fantasma
+
+    const objetivoId = String(msg.objetivoId || "");
+    if (!vivos.includes(objetivoId)) return; // solo a alguien vivo
+    if (msg.accion !== "pista" && msg.accion !== "escudo") return;
+
+    usadas.push(yo.id);
+    await this.ctx.storage.put("ayudasUsadas", usadas);
+    const objetivo = this.socketDe(objetivoId);
+
+    if (msg.accion === "pista") {
+      const desafio = await this.leer("desafio", null);
+      const ids = desafio.datos.opciones.map((o) => o.id);
+      const malas = ids.filter((id) => id !== desafio.correcta);
+      for (let i = malas.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [malas[i], malas[j]] = [malas[j], malas[i]];
+      }
+      const dejarMalas = ids.length >= 6 ? 2 : 1;
+      const visibles = [desafio.correcta, ...malas.slice(0, dejarMalas)];
+      if (objetivo) this.enviar(objetivo, { tipo: "pista", visibles, de: yo.nombre });
+    } else {
+      const escudos = await this.leer("escudos", []);
+      if (!escudos.includes(objetivoId)) {
+        escudos.push(objetivoId);
+        await this.ctx.storage.put("escudos", escudos);
+      }
+      if (objetivo) this.enviar(objetivo, { tipo: "escudo", de: yo.nombre });
+    }
+
+    this.enviar(ws, {
+      tipo: "ayudaConfirmada",
+      accion: msg.accion,
+      objetivo: plantel[objetivoId]?.nombre || "???",
+    });
+  }
+
   async resolverRonda() {
     if ((await this.fase()) !== "ronda") return;
 
@@ -340,6 +404,7 @@ export class Sala extends DurableObject {
     const respuestas = await this.leer("respuestas", {});
     const vivos = await this.leer("vivos", []);
     const plantel = await this.leer("plantel", {});
+    const escudos = await this.leer("escudos", []);
 
     const sobreviven = [];
     const desaparecidos = [];
@@ -347,8 +412,10 @@ export class Sala extends DurableObject {
     for (const id of vivos) {
       const r = respuestas[id];
       const acerto = r != null && r.valor === desafio.correcta;
-      resultados.push({ id, ok: acerto, respondio: r != null });
-      if (acerto) sobreviven.push(id);
+      // Si falló pero tenía escudo de un fantasma, resiste.
+      const escudado = !acerto && escudos.includes(id);
+      resultados.push({ id, ok: acerto, respondio: r != null, escudado });
+      if (acerto || escudado) sobreviven.push(id);
       else desaparecidos.push(id);
     }
 
@@ -424,6 +491,7 @@ export class Sala extends DurableObject {
 
     await this.ctx.storage.delete([
       "plantel", "vivos", "ronda", "desafio", "respuestas", "finFase",
+      "escudos", "ayudasUsadas",
     ]);
     await this.cambiarFase("lobby");
 

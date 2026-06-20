@@ -157,5 +157,52 @@ console.log("— C: DERROTA TOTAL —");
   await espera(300);
 }
 
+// ════════ D: fantasma con una ayuda (escudo y pista) ════════
+console.log("— D: FANTASMA CON UNA AYUDA —");
+{
+  const codigo = await crear();
+  const cls = ["Uno", "Dos", "Tres", "Cuatro"].map((n) => clienteNuevo(codigo, n));
+  await espera(500);
+  cls[0].enviar({ tipo: "iniciar" });
+  await espera(1600);
+
+  // Ronda 1: Cuatro erra y cae; los demás aciertan.
+  let d = ultimo(cls[0], "desafio");
+  cls.slice(0, 3).forEach((c) => c.enviar({ tipo: "responder", valor: idCorrecto(d) }));
+  cls[3].enviar({ tipo: "responder", valor: idIncorrecto(d) });
+  await espera(1300); // pasa la resolución y arranca la ronda 2
+  ok(ultimo(cls[3], "resolucion").desaparecidos.some((x) => x.id === cls[3].tuId),
+     "Cuatro cae en la ronda 1 (ahora es fantasma)");
+
+  // Ronda 2: el fantasma (Cuatro) pone un ESCUDO sobre Uno; Uno erra
+  // a propósito y, gracias al escudo, igual sobrevive.
+  let intentos = 0;
+  while (ultimo(cls[0], "desafio")?.ronda !== 2 && intentos < 40) { await espera(100); intentos++; }
+  d = ultimo(cls[0], "desafio");
+  cls[3].enviar({ tipo: "ayuda", accion: "escudo", objetivoId: cls[0].tuId });
+  await espera(250);
+  ok(ultimo(cls[3], "ayudaConfirmada")?.accion === "escudo", "el fantasma confirma el escudo");
+  ok(ultimo(cls[0], "escudo") != null, "Uno recibe el aviso de escudo");
+
+  cls[0].enviar({ tipo: "responder", valor: idIncorrecto(d) }); // erra, pero está protegido
+  cls[1].enviar({ tipo: "responder", valor: idCorrecto(d) });
+  cls[2].enviar({ tipo: "responder", valor: idCorrecto(d) });
+  await espera(400);
+  const reso2 = ultimo(cls[0], "resolucion");
+  ok(reso2.vivos.includes(cls[0].tuId), "Uno sobrevive pese a errar: el escudo lo salvó");
+  ok(reso2.resultados.find((r) => r.id === cls[0].tuId)?.escudado === true,
+     "la resolución marca a Uno como escudado");
+
+  // El fantasma ya gastó su ayuda: un segundo intento se ignora.
+  while (ultimo(cls[0], "desafio")?.ronda !== 3 && intentos < 80) { await espera(100); intentos++; }
+  cls[3].enviar({ tipo: "ayuda", accion: "escudo", objetivoId: cls[1].tuId });
+  await espera(300);
+  const confirmaciones = todos(cls[3], "ayudaConfirmada").length;
+  ok(confirmaciones === 1, "el fantasma no puede dar una segunda ayuda");
+
+  cls.forEach((c) => c.ws.close());
+  await espera(300);
+}
+
 console.log(fallas === 0 ? "\nTODO OK" : `\n${fallas} FALLAS`);
 process.exit(fallas === 0 ? 0 : 1);

@@ -13,6 +13,8 @@ const estado = {
   jugadores: {}, // id → { nombre, avatar }
   vivos: [],
   respondi: false,
+  soyFantasma: false,
+  tengoAyuda: false,
   relojPantalla: null,
   huboError: false,
 };
@@ -125,6 +127,17 @@ function manejarMensaje(msg) {
     case "resolucion":
       mostrarResolucion(msg);
       break;
+    case "pista":
+      recibirPista(msg);
+      break;
+    case "escudo":
+      recibirEscudo(msg);
+      break;
+    case "ayudaConfirmada":
+      estado.tengoAyuda = false;
+      $("panel-fantasma").innerHTML =
+        `<p class="aviso-fantasma">DISTE ${msg.accion === "pista" ? "UNA PISTA" : "UN ESCUDO"} A ${escaparHTML((msg.objetivo||"").toUpperCase())}.</p>`;
+      break;
     case "reconexion":
       manejarReconexion(msg);
       break;
@@ -195,6 +208,9 @@ function dibujarLobby(msg) {
 // ─── Intro narrativa ───
 
 function mostrarIntro(msg) {
+  // Arranca una noche nueva: todos vivos, sin fantasmas todavía.
+  estado.soyFantasma = false;
+  estado.tengoAyuda = false;
   mostrarPantalla("intro");
   const cont = $("intro-texto");
   cont.innerHTML = "";
@@ -225,10 +241,65 @@ function mostrarDesafio(msg) {
   $("progreso-ronda").textContent = "";
   $("estado-respuesta").textContent = soyVivo
     ? "" : "EL RÍO YA TE LLEVÓ. MIRÁ SI EL RESTO SOBREVIVE...";
+  $("monitor-desafio").classList.remove("protegido");
 
   dibujarDesafio(msg.tipoDesafio, msg.datos, soyVivo);
+  dibujarPanelFantasma(soyVivo);
   iniciarReloj(msg.restanteMs, "reloj");
   mostrarPantalla("ronda");
+}
+
+// Panel del fantasma: si caíste y todavía tenés tu ayuda, podés
+// gastarla en alguien que sigue vivo (una pista o un escudo).
+function dibujarPanelFantasma(soyVivo) {
+  const panel = $("panel-fantasma");
+  panel.innerHTML = "";
+  panel.hidden = soyVivo || !estado.tengoAyuda;
+  if (panel.hidden) return;
+
+  const titulo = document.createElement("p");
+  titulo.className = "aviso-fantasma";
+  titulo.textContent = "TENÉS UNA AYUDA. ELEGÍ A QUIÉN AUXILIAR:";
+  panel.appendChild(titulo);
+
+  estado.vivos.forEach((id) => {
+    const fila = document.createElement("div");
+    fila.className = "fila-fantasma";
+    const nombre = document.createElement("span");
+    nombre.className = "nombre-vivo";
+    nombre.textContent = nombreDe(id);
+    const bPista = document.createElement("button");
+    bPista.className = "ayuda-btn";
+    bPista.textContent = "PISTA";
+    bPista.onclick = () => darAyuda(id, "pista");
+    const bEscudo = document.createElement("button");
+    bEscudo.className = "ayuda-btn";
+    bEscudo.textContent = "ESCUDO";
+    bEscudo.onclick = () => darAyuda(id, "escudo");
+    fila.append(nombre, bPista, bEscudo);
+    panel.appendChild(fila);
+  });
+}
+
+function darAyuda(objetivoId, accion) {
+  if (!estado.tengoAyuda) return;
+  estado.ws.send(JSON.stringify({ tipo: "ayuda", accion, objetivoId }));
+}
+
+// Un fantasma te tachó las opciones malas (te dejó pocas).
+function recibirPista(msg) {
+  const visibles = new Set(msg.visibles);
+  document.querySelectorAll("#zona-desafio .opcion").forEach((b) => {
+    // el id de la opción quedó guardado en el handler; lo recuperamos
+    // comparando por el dataset que seteamos al dibujar.
+    if (!visibles.has(b.dataset.id)) b.classList.add("tachada");
+  });
+  $("estado-respuesta").textContent = `${(msg.de||"UN FANTASMA").toUpperCase()} TE SUSURRA UNA PISTA`;
+}
+
+function recibirEscudo(msg) {
+  $("estado-respuesta").textContent = `${(msg.de||"UN FANTASMA").toUpperCase()} TE PROTEGE ESTA RONDA`;
+  $("monitor-desafio").classList.add("protegido");
 }
 
 // Cada tipo de desafío se dibuja distinto. Sumar uno = agregar un caso.
@@ -261,6 +332,7 @@ function dibujarDesafio(tipo, datos, soyVivo) {
   datos.opciones.forEach((op) => {
     const b = document.createElement("button");
     b.className = "opcion";
+    b.dataset.id = op.id; // lo usa la pista para tachar las malas
     b.textContent = op.nombre;
     b.disabled = !soyVivo;
     b.onclick = () => responder(op.id, b);
@@ -282,15 +354,22 @@ function responder(valor, boton) {
 // ─── Resolución ───
 
 function mostrarResolucion(msg) {
-  registrarJugadores([]); // no-op, jugadores ya cargados
   const sigoVivo = msg.vivos.includes(estado.tuId);
   const eraVivo = msg.resultados.some((r) => r.id === estado.tuId);
+  // Si estaba vivo y ya no, me vuelvo fantasma con una ayuda para gastar.
+  if (eraVivo && !sigoVivo) {
+    estado.soyFantasma = true;
+    estado.tengoAyuda = true;
+  }
+  const miResultado = msg.resultados.find((r) => r.id === estado.tuId);
 
-  $("titulo-resolucion").textContent = sigoVivo
-    ? ":: SEGUÍS EN PIE ::"
-    : eraVivo
-      ? ":: EL RÍO TE LLEVÓ ::"
-      : ":: LA NOCHE SIGUE ::";
+  $("titulo-resolucion").textContent = miResultado?.escudado
+    ? ":: UN ESCUDO TE SALVÓ ::"
+    : sigoVivo
+      ? ":: SEGUÍS EN PIE ::"
+      : eraVivo
+        ? ":: EL RÍO TE LLEVÓ ::"
+        : ":: LA NOCHE SIGUE ::";
   $("titulo-resolucion").style.color = sigoVivo || !eraVivo ? "#33ff66" : "#ff5040";
 
   const det = $("detalle-resolucion");
@@ -369,13 +448,17 @@ function mostrarFinal(resultado) {
 function manejarReconexion(msg) {
   registrarJugadores(msg.jugadores || []);
   estado.vivos = msg.vivos || [];
+  estado.soyFantasma = !msg.soyVivo;
+  estado.tengoAyuda = Boolean(msg.tengoAyuda);
   if (msg.fase === "ronda" && msg.desafio) {
     estado.respondi = msg.yaRespondi;
     $("marcador-ronda").textContent = `RONDA ${msg.ronda}/${msg.total}`;
     $("marcador-vivos").textContent = `◊ ${estado.vivos.length}`;
     $("enunciado-desafio").textContent = msg.desafio.enunciado;
+    $("monitor-desafio").classList.remove("protegido");
     const soyVivo = msg.soyVivo;
     dibujarDesafio(msg.desafio.tipo, msg.desafio.datos, soyVivo && !msg.yaRespondi);
+    dibujarPanelFantasma(soyVivo);
     if (msg.yaRespondi) {
       document.querySelectorAll("#zona-desafio .opcion").forEach((b) => (b.disabled = true));
       $("estado-respuesta").textContent = "YA RESPONDISTE. AGUANTÁ...";
