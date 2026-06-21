@@ -1,7 +1,7 @@
 // Prueba de contenido de los desafíos: corre sin servidor.
 // Verifica que cada desafío sea válido (la respuesta correcta SIEMPRE
 // está entre las opciones) y que la variedad funcione.
-import { DESAFIOS, elegirDesafio } from "../src/desafios.js";
+import { DESAFIOS, TIPOS, generarDesafio, elegirDesafio } from "../src/desafios.js";
 
 let fallas = 0;
 function ok(cond, desc) {
@@ -11,9 +11,10 @@ function ok(cond, desc) {
 
 // Cada tipo por opción, generado muchas veces, debe ser resoluble.
 for (const [tipo, def] of Object.entries(DESAFIOS)) {
-  if (def.reflejo) {
-    // Los desafíos de reflejo (luz verde) no se validan por opción.
-    ok(!!def.generar().datos, `${tipo}: genera (desafío de reflejo)`);
+  if (def.reflejo || def.manual) {
+    // Los desafíos de reflejo (luz verde) y los "manuales" (orden, simon)
+    // no se validan por opción: los maneja el cliente y avisa al servidor.
+    ok(!!def.generar().datos, `${tipo}: genera (desafío especial)`);
     continue;
   }
   let todoBien = true;
@@ -22,7 +23,7 @@ for (const [tipo, def] of Object.entries(DESAFIOS)) {
     for (let i = 0; i < 200; i++) {
       const d = def.generar(ronda);
       const ids = d.datos.opciones.map((o) => o.id);
-      if (!d.enunciado || ids.length < 3) todoBien = false;
+      if (!d.enunciado || ids.length < 2) todoBien = false;
       if (!ids.includes(d.correcta)) opcionesOk = false;
       if (new Set(ids).size !== ids.length) opcionesOk = false; // sin repetidos
     }
@@ -54,6 +55,38 @@ ok(elegirDesafio(5, true).tipo === "stroop", "en modo prueba siempre es Stroop (
 const tipos = new Set();
 for (let i = 0; i < 300; i++) tipos.add(elegirDesafio(5).tipo);
 ok(tipos.size >= 2, `de la ronda 2 en adelante hay variedad (vistos: ${[...tipos].join(", ")})`);
+
+// Simulación de la "bolsa": cada vuelta usa todos los tipos una vez,
+// y nunca se repite el mismo dos veces seguidas (ni tres).
+function simularBolsa(rondas) {
+  let bolsa = [], ultimo = null;
+  const salida = [];
+  const barajar = (a) => { a = [...a]; for (let i=a.length-1;i>0;i--){const j=(Math.random()*(i+1))|0;[a[i],a[j]]=[a[j],a[i]];} return a; };
+  for (let r = 0; r < rondas; r++) {
+    if (bolsa.length === 0) {
+      bolsa = barajar(TIPOS);
+      if (bolsa[0] === ultimo && bolsa.length > 1) {
+        const j = 1 + ((Math.random() * (bolsa.length - 1)) | 0);
+        [bolsa[0], bolsa[j]] = [bolsa[j], bolsa[0]];
+      }
+    }
+    const t = bolsa.shift();
+    salida.push(t);
+    ultimo = t;
+  }
+  return salida;
+}
+let sinRepetir = true, sinTres = true;
+for (let intento = 0; intento < 500; intento++) {
+  const s = simularBolsa(40);
+  for (let i = 1; i < s.length; i++) if (s[i] === s[i - 1]) sinRepetir = false;
+  for (let i = 2; i < s.length; i++) if (s[i] === s[i - 1] && s[i] === s[i - 2]) sinTres = false;
+}
+ok(sinRepetir, "la bolsa nunca repite el mismo desafío dos veces seguidas");
+ok(sinTres, "la bolsa nunca repite tres veces seguidas");
+// Una vuelta completa usa todos los tipos (orden distinto cada vez).
+const vuelta = simularBolsa(TIPOS.length);
+ok(new Set(vuelta).size === TIPOS.length, "una vuelta completa usa todos los tipos una vez");
 
 console.log(fallas === 0 ? "\nTODO OK" : `\n${fallas} FALLAS`);
 process.exit(fallas === 0 ? 0 : 1);

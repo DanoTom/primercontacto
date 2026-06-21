@@ -223,6 +223,73 @@ export const DESAFIOS = {
     },
   },
 
+  // VISUAL: dos filas de figuras. ¿Son idénticas o hay una diferencia?
+  igualdistinto: {
+    generar(ronda = 1) {
+      const largo = Math.min(8, 3 + Math.floor(ronda / 2));
+      const fila1 = [];
+      for (let i = 0; i < largo; i++) fila1.push(elegir(FIGURAS));
+      const fila2 = [...fila1];
+      const iguales = Math.random() < 0.5;
+      if (!iguales) {
+        const k = Math.floor(Math.random() * largo);
+        let nuevo = elegir(FIGURAS);
+        while (nuevo === fila2[k]) nuevo = elegir(FIGURAS);
+        fila2[k] = nuevo;
+      }
+      return {
+        enunciado: "¿LAS DOS FILAS SON IGUALES?",
+        datos: {
+          tipo: "igualdistinto",
+          fila1,
+          fila2,
+          opciones: [
+            { id: "si", nombre: "IGUALES" },
+            { id: "no", nombre: "DISTINTAS" },
+          ],
+        },
+        correcta: iguales ? "si" : "no",
+      };
+    },
+  },
+
+  // ATENCIÓN (Tabla de Schulte): tocá los números en orden, contra reloj.
+  // "manual": el cliente avisa "ok" al completar; no se valida por opción.
+  orden: {
+    manual: true,
+    generar(ronda = 1) {
+      const n = Math.min(12, 5 + ronda);
+      const cols = n <= 6 ? 3 : 4;
+      const nums = barajar(Array.from({ length: n }, (_, i) => i + 1));
+      return {
+        enunciado: `TOCÁ DEL 1 AL ${n} EN ORDEN`,
+        datos: {
+          tipo: "orden",
+          cols,
+          total: n,
+          celdas: nums.map((v, i) => ({ id: "p" + i, n: v })),
+        },
+        correcta: "ok",
+      };
+    },
+  },
+
+  // MEMORIA (Simon): se enciende una secuencia de luces; repetila.
+  // "manual": el cliente la muestra, la valida y avisa "ok"/"fail".
+  simon: {
+    manual: true,
+    generar(ronda = 1) {
+      const largo = Math.min(6, 3 + Math.floor((ronda - 1) / 2));
+      const secuencia = [];
+      for (let i = 0; i < largo; i++) secuencia.push(Math.floor(Math.random() * 4));
+      return {
+        enunciado: "MEMORIZÁ Y REPETÍ LA SECUENCIA",
+        datos: { tipo: "simon", pads: 4, secuencia, mostrarMs: largo * 650 + 700 },
+        correcta: "ok",
+      };
+    },
+  },
+
   // REFLEJO: esperá la luz verde y tocá. Si te adelantás, caés.
   // El servidor maneja el tiempo de la luz y valida por reacción.
   luzverde: {
@@ -236,6 +303,15 @@ export const DESAFIOS = {
     },
   },
 };
+
+// Lista de tipos disponibles (la usa el servidor para rotar sin repetir).
+export const TIPOS = Object.keys(DESAFIOS);
+
+// Genera un desafío de un tipo concreto.
+export function generarDesafio(tipo, ronda) {
+  const d = DESAFIOS[tipo].generar(ronda);
+  return { tipo, ...d };
+}
 
 // Elige el desafío de la ronda. La primera siempre es suave (Stroop);
 // después varía. "forzar" puede ser:

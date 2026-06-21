@@ -13,7 +13,16 @@
 // Object (sobrevive hibernaciones); lo crítico se persiste en storage.
 
 import { DurableObject } from "cloudflare:workers";
-import { elegirDesafio } from "./desafios.js";
+import { TIPOS, generarDesafio } from "./desafios.js";
+
+function barajarLista(lista) {
+  const c = [...lista];
+  for (let i = c.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [c[i], c[j]] = [c[j], c[i]];
+  }
+  return c;
+}
 
 const MAX_JUGADORES = 8;
 const MIN_JUGADORES = 3;
@@ -61,6 +70,7 @@ export class Sala extends DurableObject {
         luzEsperaMin: 500,
         luzEsperaMax: 1000,
         luzReaccion: 1500,
+        simonReaccion: 2000,
       };
     }
     return {
@@ -73,6 +83,7 @@ export class Sala extends DurableObject {
       luzEsperaMin: 1200, // luz verde: mínimo de espera antes de la señal
       luzEsperaMax: 3800, // máximo de espera
       luzReaccion: 2500, // ventana para tocar después de la señal
+      simonReaccion: 4500, // simon: ventana para repetir la secuencia
     };
   }
 
@@ -320,24 +331,56 @@ export class Sala extends DurableObject {
 
   // ─── El bucle de rondas ───
 
+  // Reparte los tipos como de una bolsa barajada: cada uno aparece una
+  // vez por vuelta, en orden distinto cada partida, y nunca dos veces
+  // seguidas (ni, por lo tanto, tres). Cuando la bolsa se vacía, se
+  // rebaraja evitando que el primero repita al último.
+  async proximoTipo() {
+    let bolsa = await this.leer("bolsa", []);
+    const ultimo = await this.leer("ultimoTipo", null);
+    if (bolsa.length === 0) {
+      bolsa = barajarLista(TIPOS);
+      if (bolsa[0] === ultimo && bolsa.length > 1) {
+        const j = 1 + Math.floor(Math.random() * (bolsa.length - 1));
+        [bolsa[0], bolsa[j]] = [bolsa[j], bolsa[0]];
+      }
+    }
+    const tipo = bolsa.shift();
+    await this.ctx.storage.put({ bolsa, ultimoTipo: tipo });
+    return tipo;
+  }
+
   async iniciarRonda() {
     const total = this.duraciones().rondas;
     const ronda = (await this.leer("ronda", 0)) + 1;
-    const desafio = elegirDesafio(
-      ronda,
-      this.env.SOLO_DESAFIO || this.env.MODO_PRUEBA === "1"
-    );
+
+    // Elegir el tipo de desafío. La ronda 1 es siempre Stroop (gentil);
+    // el resto sale de la bolsa. Las pruebas pueden forzar un tipo.
+    let tipo;
+    if (this.env.SOLO_DESAFIO && TIPOS.includes(this.env.SOLO_DESAFIO)) {
+      tipo = this.env.SOLO_DESAFIO;
+    } else if (this.env.MODO_PRUEBA === "1") {
+      tipo = "stroop";
+    } else if (ronda === 1) {
+      tipo = "stroop";
+      await this.ctx.storage.put("ultimoTipo", "stroop");
+    } else {
+      tipo = await this.proximoTipo();
+    }
+    const desafio = generarDesafio(tipo, ronda);
     const ahora = Date.now();
 
-    // "Luz verde" tiene su propio ritmo: una espera al azar (la señal)
-    // y después una ventana para reaccionar. El momento de la luz se
-    // guarda en el servidor y NUNCA viaja al cliente.
+    // Cada desafío de tiempo especial fija su propia duración:
+    // - luz verde: espera al azar (la señal, secreta) + ventana de reacción
+    // - simon: lo que dura la secuencia + ventana para repetirla
     let duracion, greenAt = 0;
-    if (desafio.tipo === "luzverde") {
-      const d = this.duraciones();
+    const d = this.duraciones();
+    if (tipo === "luzverde") {
       const espera = d.luzEsperaMin + Math.floor(Math.random() * (d.luzEsperaMax - d.luzEsperaMin));
       greenAt = ahora + espera;
       duracion = espera + d.luzReaccion;
+    } else if (tipo === "simon") {
+      duracion = (desafio.datos.mostrarMs || 2000) + d.simonReaccion;
     } else {
       duracion = this.rondaMs(ronda);
     }
@@ -424,6 +467,16 @@ export class Sala extends DurableObject {
     const objetivoId = String(msg.objetivoId || "");
     if (!vivos.includes(objetivoId)) return; // solo a alguien vivo
     if (msg.accion !== "pista" && msg.accion !== "escudo") return;
+
+    // La pista solo sirve en desafíos con opciones; si no las hay
+    // (orden, simon, luz verde), no se gasta la ayuda.
+    const desafioActual = await this.leer("desafio", null);
+    if (msg.accion === "pista" && !desafioActual?.datos?.opciones) {
+      return this.enviar(ws, {
+        tipo: "error",
+        mensaje: "EN ESTE DESAFÍO NO SE PUEDE DAR PISTA. PROBÁ CON UN ESCUDO.",
+      });
+    }
 
     usadas.push(yo.id);
     await this.ctx.storage.put("ayudasUsadas", usadas);
@@ -565,7 +618,7 @@ export class Sala extends DurableObject {
 
     await this.ctx.storage.delete([
       "plantel", "vivos", "ronda", "desafio", "respuestas", "finFase",
-      "escudos", "ayudasUsadas", "greenAt",
+      "escudos", "ayudasUsadas", "greenAt", "bolsa", "ultimoTipo",
     ]);
     await this.cambiarFase("lobby");
 

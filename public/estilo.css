@@ -1345,3 +1345,73 @@ button.peligro:active:not(:disabled), #boton-emergencia:active:not(:disabled) {
   margin: 14px 0 0;
   opacity: 0.9;
 }
+
+/* ── Más desafíos: en orden (Schulte), simon, iguales/distintas ── */
+
+/* En orden: las celdas son números; al tocarlas se apagan */
+.celda-num { font-family: var(--fuente-monitor); font-size: clamp(24px,7vw,38px); }
+.celda-num.hecha {
+  opacity: 0.25;
+  border-color: #2a4a30;
+  text-decoration: line-through;
+}
+
+/* Simon: cuatro luces grandes */
+.simon-pads {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  width: 100%;
+  max-width: 300px;
+}
+.simon-pad {
+  aspect-ratio: 1;
+  min-height: 0;
+  border-radius: 14px;
+  border: 3px solid #1a2620;
+  background: #0c1610;
+  box-shadow: inset 0 0 16px rgba(0,0,0,0.6);
+  transition: background 0.06s, box-shadow 0.06s, transform 0.06s;
+}
+.simon-pad.pad-0 { border-color: #1f8a42; }
+.simon-pad.pad-1 { border-color: #a87400; }
+.simon-pad.pad-2 { border-color: #2a6ab0; }
+.simon-pad.pad-3 { border-color: #9c1f15; }
+.simon-pad.encendido { transform: scale(0.97); }
+.simon-pad.pad-0.encendido { background: #3fd968; box-shadow: 0 0 26px #3fd968; }
+.simon-pad.pad-1.encendido { background: #ffd23f; box-shadow: 0 0 26px #ffd23f; }
+.simon-pad.pad-2.encendido { background: #5b8def; box-shadow: 0 0 26px #5b8def; }
+.simon-pad.pad-3.encendido { background: #ff5040; box-shadow: 0 0 26px #ff5040; }
+
+/* Iguales o distintas: dos filas grandes de figuras */
+.fila-comparar {
+  font-family: var(--fuente-monitor);
+  font-size: clamp(26px, 8vw, 44px);
+  letter-spacing: 6px;
+  text-align: center;
+  text-shadow: 0 0 10px rgba(51,255,102,0.45);
+  padding: 4px 0;
+}
+.fila-comparar + .fila-comparar { border-top: 1px dashed #2a4a30; }
+
+/* ── Las ilustraciones de Río Manso dentro del monitor ── */
+/* (sin z-index para que las scanlines del tubo queden por encima) */
+.img-escena {
+  display: block;
+  width: 100%;
+  max-width: 460px;
+  margin: 0 auto 10px;
+  border-radius: 8px;
+  border: 1px solid #1a2620;
+}
+.img-emblema {
+  display: block;
+  width: 78%;
+  max-width: 360px;
+  margin: 0 auto -8px;
+}
+.img-desaparecido {
+  display: block;
+  width: 190px;
+  margin: 8px auto 4px;
+}

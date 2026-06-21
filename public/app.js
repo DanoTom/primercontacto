@@ -17,7 +17,15 @@ const estado = {
   tengoAyuda: false,
   relojPantalla: null,
   huboError: false,
+  tipoActual: null,
+  luzVerde: false,
+  ordenSiguiente: 1,
+  simonEsperando: false,
+  simonInput: [],
 };
+
+// Tipos de desafío donde una PISTA no tiene sentido (no hay opciones).
+const SIN_PISTA = ["orden", "simon", "luzverde"];
 
 // ─── Pantallas ───
 
@@ -245,21 +253,23 @@ function mostrarDesafio(msg) {
   $("estado-respuesta").textContent = soyVivo
     ? "" : "EL RÍO YA TE LLEVÓ. MIRÁ SI EL RESTO SOBREVIVE...";
   $("monitor-desafio").classList.remove("protegido");
+  estado.tipoActual = msg.tipoDesafio;
 
   dibujarDesafio(msg.tipoDesafio, msg.datos, soyVivo);
-  dibujarPanelFantasma(soyVivo);
+  dibujarPanelFantasma(soyVivo, msg.tipoDesafio);
   iniciarReloj(msg.restanteMs, "reloj");
   mostrarPantalla("ronda");
 }
 
 // Panel del fantasma: si caíste y todavía tenés tu ayuda, podés
 // gastarla en alguien que sigue vivo (una pista o un escudo).
-function dibujarPanelFantasma(soyVivo) {
+function dibujarPanelFantasma(soyVivo, tipo) {
   const panel = $("panel-fantasma");
   panel.innerHTML = "";
   panel.hidden = soyVivo || !estado.tengoAyuda;
   if (panel.hidden) return;
 
+  const dejaPista = !SIN_PISTA.includes(tipo);
   const titulo = document.createElement("p");
   titulo.className = "aviso-fantasma";
   titulo.textContent = "TENÉS UNA AYUDA. ELEGÍ A QUIÉN AUXILIAR:";
@@ -271,15 +281,19 @@ function dibujarPanelFantasma(soyVivo) {
     const nombre = document.createElement("span");
     nombre.className = "nombre-vivo";
     nombre.textContent = nombreDe(id);
-    const bPista = document.createElement("button");
-    bPista.className = "ayuda-btn";
-    bPista.textContent = "PISTA";
-    bPista.onclick = () => darAyuda(id, "pista");
+    fila.append(nombre);
+    if (dejaPista) {
+      const bPista = document.createElement("button");
+      bPista.className = "ayuda-btn";
+      bPista.textContent = "PISTA";
+      bPista.onclick = () => darAyuda(id, "pista");
+      fila.append(bPista);
+    }
     const bEscudo = document.createElement("button");
     bEscudo.className = "ayuda-btn";
     bEscudo.textContent = "ESCUDO";
     bEscudo.onclick = () => darAyuda(id, "escudo");
-    fila.append(nombre, bPista, bEscudo);
+    fila.append(bEscudo);
     panel.appendChild(fila);
   });
 }
@@ -309,6 +323,45 @@ function recibirEscudo(msg) {
 function dibujarDesafio(tipo, datos, soyVivo) {
   const zona = $("zona-desafio");
   zona.innerHTML = "";
+
+  // "En orden" (Schulte): grilla de números a tocar en secuencia.
+  if (tipo === "orden") {
+    estado.ordenSiguiente = 1;
+    const grilla = document.createElement("div");
+    grilla.className = "celdas-distinto";
+    grilla.style.gridTemplateColumns = `repeat(${datos.cols}, 1fr)`;
+    datos.celdas.forEach((c) => {
+      const b = document.createElement("button");
+      b.className = "opcion celda celda-num";
+      b.textContent = c.n;
+      b.dataset.n = c.n;
+      b.disabled = !soyVivo;
+      b.onclick = () => tocarOrden(b, datos.total);
+      grilla.appendChild(b);
+    });
+    zona.appendChild(grilla);
+    if (soyVivo) $("estado-respuesta").textContent = "TOCÁ EL 1 PARA EMPEZAR";
+    return;
+  }
+
+  // "Simon": memorizá la secuencia de luces y repetila.
+  if (tipo === "simon") {
+    estado.simonEsperando = true;
+    estado.simonInput = [];
+    const cont = document.createElement("div");
+    cont.className = "simon-pads";
+    for (let i = 0; i < datos.pads; i++) {
+      const p = document.createElement("button");
+      p.className = "simon-pad pad-" + i;
+      p.dataset.i = i;
+      p.disabled = true;
+      p.onclick = () => tocarSimon(i, datos.secuencia);
+      cont.appendChild(p);
+    }
+    zona.appendChild(cont);
+    if (soyVivo) reproducirSimon(datos.secuencia, datos.mostrarMs);
+    return;
+  }
 
   // "Luz verde" es una zona de toque, no una grilla de opciones.
   if (tipo === "luzverde") {
@@ -355,6 +408,14 @@ function dibujarDesafio(tipo, datos, soyVivo) {
     sec.className = "secuencia-visual";
     sec.textContent = datos.secuencia.join("   ");
     zona.appendChild(sec);
+  } else if (tipo === "igualdistinto") {
+    const f1 = document.createElement("div");
+    f1.className = "fila-comparar";
+    f1.textContent = datos.fila1.join("  ");
+    const f2 = document.createElement("div");
+    f2.className = "fila-comparar";
+    f2.textContent = datos.fila2.join("  ");
+    zona.append(f1, f2);
   }
 
   // Las opciones: botones de texto, o celdas visuales (distinto).
@@ -414,6 +475,61 @@ function responderLuz() {
   }
 }
 
+// "En orden": solo avanza si tocás el número que toca. Al completar, listo.
+function tocarOrden(boton, total) {
+  if (estado.respondi) return;
+  if (Number(boton.dataset.n) !== estado.ordenSiguiente) return;
+  boton.classList.add("hecha");
+  boton.disabled = true;
+  estado.ordenSiguiente++;
+  if (estado.ordenSiguiente > total) {
+    estado.respondi = true;
+    estado.ws.send(JSON.stringify({ tipo: "responder", valor: "ok" }));
+    $("estado-respuesta").textContent = "¡COMPLETO! AGUANTÁ...";
+  } else {
+    $("estado-respuesta").textContent = `VA EL ${estado.ordenSiguiente}`;
+  }
+}
+
+// "Simon": primero se enciende la secuencia; después la repetís.
+function flashPad(i) {
+  const p = document.querySelector(".simon-pad.pad-" + i);
+  if (!p) return;
+  p.classList.add("encendido");
+  setTimeout(() => p.classList.remove("encendido"), 350);
+}
+
+function reproducirSimon(secuencia, mostrarMs) {
+  $("estado-respuesta").textContent = "MEMORIZÁ...";
+  const paso = mostrarMs / (secuencia.length + 1);
+  secuencia.forEach((idx, k) => setTimeout(() => flashPad(idx), k * paso + 300));
+  setTimeout(() => {
+    estado.simonEsperando = false;
+    document.querySelectorAll(".simon-pad").forEach((p) => (p.disabled = false));
+    $("estado-respuesta").textContent = "AHORA REPETÍ";
+  }, secuencia.length * paso + 400);
+}
+
+function tocarSimon(i, secuencia) {
+  if (estado.respondi || estado.simonEsperando) return;
+  flashPad(i);
+  estado.simonInput.push(i);
+  const paso = estado.simonInput.length - 1;
+  if (secuencia[paso] !== i) {
+    estado.respondi = true;
+    estado.ws.send(JSON.stringify({ tipo: "responder", valor: "fail" }));
+    $("estado-respuesta").textContent = "TE EQUIVOCASTE...";
+    document.querySelectorAll(".simon-pad").forEach((p) => (p.disabled = true));
+    return;
+  }
+  if (estado.simonInput.length === secuencia.length) {
+    estado.respondi = true;
+    estado.ws.send(JSON.stringify({ tipo: "responder", valor: "ok" }));
+    $("estado-respuesta").textContent = "¡BIEN! AGUANTÁ...";
+    document.querySelectorAll(".simon-pad").forEach((p) => (p.disabled = true));
+  }
+}
+
 function responder(valor, boton) {
   if (estado.respondi) return;
   estado.respondi = true;
@@ -450,6 +566,9 @@ function mostrarResolucion(msg) {
   det.innerHTML = msg.correcta != null
     ? `<p class="dato-resolucion">LA RESPUESTA ERA: ${String(msg.correcta).toUpperCase()}</p>`
     : `<p class="dato-resolucion">REFLEJOS BAJO PRESIÓN</p>`;
+
+  // La imagen del desaparecido aparece solo si el Río se llevó a alguien.
+  $("img-desaparecido").hidden = msg.desaparecidos.length === 0;
 
   const cont = $("desaparecidos-lista");
   cont.innerHTML = "";
@@ -497,6 +616,11 @@ function mostrarFinal(resultado) {
     ? "ALGUIEN SOBREVIVIÓ A LA NOCHE. EL GRUPO GANA."
     : "EL RÍO MANSO SE LOS LLEVÓ A TODOS.";
 
+  // El amanecer si ganaron; la cabaña vacía si el Río se los llevó.
+  const imgFinal = $("img-final");
+  imgFinal.src = resultado.ganaron ? "img/amanecer.jpg" : "img/cabana-vacia.jpg";
+  imgFinal.hidden = false;
+
   const cont = $("sobrevivientes-lista");
   cont.innerHTML = "";
   if (resultado.sobrevivientes.length) {
@@ -538,9 +662,10 @@ function manejarReconexion(msg) {
     $("marcador-vivos").textContent = `◊ ${estado.vivos.length}`;
     $("enunciado-desafio").textContent = msg.desafio.enunciado;
     $("monitor-desafio").classList.remove("protegido");
+    estado.tipoActual = msg.desafio.tipo;
     const soyVivo = msg.soyVivo;
     dibujarDesafio(msg.desafio.tipo, msg.desafio.datos, soyVivo && !msg.yaRespondi);
-    dibujarPanelFantasma(soyVivo);
+    dibujarPanelFantasma(soyVivo, msg.desafio.tipo);
     if (msg.desafio.tipo === "luzverde" && msg.yaVerde) activarLuzVerde();
     if (msg.yaRespondi) {
       document.querySelectorAll("#zona-desafio .opcion").forEach((b) => (b.disabled = true));
