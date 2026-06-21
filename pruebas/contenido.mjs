@@ -1,7 +1,7 @@
 // Prueba de contenido de los desafíos: corre sin servidor.
 // Verifica que cada desafío sea válido (la respuesta correcta SIEMPRE
 // está entre las opciones) y que la variedad funcione.
-import { DESAFIOS, TIPOS, generarDesafio, elegirDesafio } from "../src/desafios.js";
+import { DESAFIOS, TIPOS, generarDesafio } from "../src/desafios.js";
 
 let fallas = 0;
 function ok(cond, desc) {
@@ -11,9 +11,9 @@ function ok(cond, desc) {
 
 // Cada tipo por opción, generado muchas veces, debe ser resoluble.
 for (const [tipo, def] of Object.entries(DESAFIOS)) {
-  if (def.reflejo || def.manual) {
-    // Los desafíos de reflejo (luz verde) y los "manuales" (orden, simon)
-    // no se validan por opción: los maneja el cliente y avisa al servidor.
+  if (def.reflejo || def.manual || def.cooperativo) {
+    // Los especiales (luz verde, orden, simon, sincronía) no se validan
+    // por opción: los maneja el cliente o el resultado es grupal.
     ok(!!def.generar().datos, `${tipo}: genera (desafío especial)`);
     continue;
   }
@@ -49,12 +49,9 @@ ok(calculoOk, "calculo: la cuenta da siempre el resultado correcto y no negativo
 const p = DESAFIOS.patron.generar(2);
 ok(p.datos.secuencia.includes("?"), "patron: la secuencia termina en incógnita");
 
-// La elección por ronda: la 1 siempre suave; el modo prueba fija stroop.
-ok(elegirDesafio(1).tipo === "stroop", "la ronda 1 siempre es Stroop (gentil)");
-ok(elegirDesafio(5, true).tipo === "stroop", "en modo prueba siempre es Stroop (determinista)");
-const tipos = new Set();
-for (let i = 0; i < 300; i++) tipos.add(elegirDesafio(5).tipo);
-ok(tipos.size >= 2, `de la ronda 2 en adelante hay variedad (vistos: ${[...tipos].join(", ")})`);
+// Todos los tipos se generan sin romperse (incluidos los especiales).
+ok(TIPOS.length >= 11, `hay al menos 11 desafíos (${TIPOS.length})`);
+for (const t of TIPOS) ok(!!generarDesafio(t, 5).datos, `generarDesafio('${t}') funciona`);
 
 // Simulación de la "bolsa": cada vuelta usa todos los tipos una vez,
 // y nunca se repite el mismo dos veces seguidas (ni tres).

@@ -1,12 +1,13 @@
 // Los desafíos del Río Manso. Cada uno es un módulo con generar(ronda):
-// devuelve { enunciado, datos (públicos), correcta (secreta) }.
-// El servidor guarda "correcta" y nunca la manda hasta la resolución.
+// devuelve { enunciado, datos (públicos), correcta (secreta), tiempo }.
+// "tiempo" = los milisegundos cómodos para resolverlo a ritmo tranquilo;
+// el servidor lo ajusta por ronda (más apretado al avanzar, pero nunca
+// imposible). El servidor guarda "correcta" y no la manda hasta resolver.
 //
-// Los desafíos con `reflejo:true` (Luz Verde) no se validan por opción
-// sino por tiempo de reacción: el servidor maneja su lógica aparte.
-//
-// Para sumar un desafío nuevo: agregá una entrada en DESAFIOS y su
-// dibujo en el cliente (public/app.js → dibujarDesafio).
+// Flags especiales:
+//   reflejo:true   → se valida por tiempo de reacción (luz verde)
+//   manual:true    → el cliente valida y avisa "ok"/"fail" (orden, simon)
+//   cooperativo:true → resultado grupal por coordinación (todos a la vez)
 
 function elegir(lista) {
   return lista[Math.floor(Math.random() * lista.length)];
@@ -21,7 +22,6 @@ function barajar(lista) {
   return copia;
 }
 
-// Arma opciones numéricas: la correcta + distractores cercanos únicos.
 function opcionesNumericas(correcto, cantidad = 4, dispersion = 5) {
   const valores = new Set([correcto]);
   let intentos = 0;
@@ -34,7 +34,6 @@ function opcionesNumericas(correcto, cantidad = 4, dispersion = 5) {
   return barajar([...valores]).map((n) => ({ id: String(n), nombre: String(n) }));
 }
 
-// ─── "El color miente" (Stroop) ───
 const COLORES = [
   { id: "rojo", nombre: "ROJO", hex: "#ff5040" },
   { id: "azul", nombre: "AZUL", hex: "#5b8def" },
@@ -44,7 +43,6 @@ const COLORES = [
   { id: "violeta", nombre: "VIOLETA", hex: "#c07bf0" },
 ];
 
-// ─── "El intruso": categorías de cosas concretas y rioplatenses ───
 const CATEGORIAS = {
   animales: ["PERRO", "GATO", "CABALLO", "VACA", "GALLINA", "CONEJO", "OSO", "TIGRE"],
   frutas: ["MANZANA", "BANANA", "PERA", "NARANJA", "FRUTILLA", "DURAZNO", "UVA"],
@@ -54,11 +52,9 @@ const CATEGORIAS = {
   oficios: ["MÉDICO", "MAESTRO", "BOMBERO", "PANADERO", "PLOMERO", "CARTERO"],
 };
 
-// Figuras para los desafíos visuales.
 const FIGURAS = ["▲", "●", "■", "◆", "★", "♥"];
 
 export const DESAFIOS = {
-  // Una palabra-color pintada de OTRO color. Tocá el color de la TINTA.
   stroop: {
     generar() {
       const palabra = elegir(COLORES);
@@ -73,11 +69,11 @@ export const DESAFIOS = {
           opciones: barajar(COLORES).map((c) => ({ id: c.id, nombre: c.nombre })),
         },
         correcta: tinta.id,
+        tiempo: 4500,
       };
     },
   },
 
-  // Tres cosas de una categoría y una colada de otra. Tocá la que sobra.
   intruso: {
     generar() {
       const nombres = Object.keys(CATEGORIAS);
@@ -86,18 +82,16 @@ export const DESAFIOS = {
       while (catB === catA) catB = elegir(nombres);
       const tres = barajar(CATEGORIAS[catA]).slice(0, 3);
       const intruso = elegir(CATEGORIAS[catB]);
-      const opciones = barajar(
-        [...tres, intruso].map((p) => ({ id: p, nombre: p }))
-      );
+      const opciones = barajar([...tres, intruso].map((p) => ({ id: p, nombre: p })));
       return {
         enunciado: "TOCÁ LA QUE NO PERTENECE AL GRUPO",
         datos: { tipo: "intruso", opciones },
         correcta: intruso,
+        tiempo: 5000,
       };
     },
   },
 
-  // Una cuenta rápida. La dificultad sube con la ronda.
   calculo: {
     generar(ronda = 1) {
       const tope = 6 + ronda * 2;
@@ -127,11 +121,11 @@ export const DESAFIOS = {
           opciones: opcionesNumericas(resultado, 4, usarPor ? 8 : 4),
         },
         correcta: String(resultado),
+        tiempo: 5500,
       };
     },
   },
 
-  // Una secuencia con una regla. ¿Qué número sigue?
   patron: {
     generar(ronda = 1) {
       const inicio = 1 + Math.floor(Math.random() * 6);
@@ -153,16 +147,15 @@ export const DESAFIOS = {
           opciones: opcionesNumericas(siguiente, 4, Math.max(3, Math.round(siguiente * 0.2))),
         },
         correcta: String(siguiente),
+        tiempo: 5500,
       };
     },
   },
 
-  // VISUAL: una grilla de triángulos; uno está girado distinto. Tocalo.
   distinto: {
     generar(ronda = 1) {
       const cantidad = Math.min(12, 5 + ronda);
       const cols = cantidad <= 6 ? 3 : 4;
-      // La diferencia de giro se achica con la ronda: cada vez más sutil.
       const giro = Math.max(28, 190 - ronda * 22);
       const odd = Math.floor(Math.random() * cantidad);
       const opciones = [];
@@ -173,11 +166,11 @@ export const DESAFIOS = {
         enunciado: "TOCÁ EL TRIÁNGULO GIRADO DISTINTO",
         datos: { tipo: "distinto", cols, opciones },
         correcta: "c" + odd,
+        tiempo: 3500 + cantidad * 280,
       };
     },
   },
 
-  // VISUAL: un montón de figuras mezcladas. ¿Cuántas de una clase hay?
   cuantos: {
     generar(ronda = 1) {
       const total = Math.min(26, 9 + ronda * 2);
@@ -193,11 +186,11 @@ export const DESAFIOS = {
           opciones: opcionesNumericas(target, 4, Math.max(2, Math.round(total * 0.18))),
         },
         correcta: String(target),
+        tiempo: 3000 + total * 200,
       };
     },
   },
 
-  // VISUAL: una secuencia de figuras que se repite. ¿Cuál sigue?
   figurafalta: {
     generar(ronda = 1) {
       const simbolos = barajar(FIGURAS);
@@ -219,11 +212,11 @@ export const DESAFIOS = {
           opciones: barajar([...opcSet]).map((c) => ({ id: c, nombre: c })),
         },
         correcta: siguiente,
+        tiempo: 4800,
       };
     },
   },
 
-  // VISUAL: dos filas de figuras. ¿Son idénticas o hay una diferencia?
   igualdistinto: {
     generar(ronda = 1) {
       const largo = Math.min(8, 3 + Math.floor(ronda / 2));
@@ -249,12 +242,12 @@ export const DESAFIOS = {
           ],
         },
         correcta: iguales ? "si" : "no",
+        tiempo: 3000 + largo * 450,
       };
     },
   },
 
-  // ATENCIÓN (Tabla de Schulte): tocá los números en orden, contra reloj.
-  // "manual": el cliente avisa "ok" al completar; no se valida por opción.
+  // ATENCIÓN (Tabla de Schulte): tocá los números en orden.
   orden: {
     manual: true,
     generar(ronda = 1) {
@@ -270,12 +263,12 @@ export const DESAFIOS = {
           celdas: nums.map((v, i) => ({ id: "p" + i, n: v })),
         },
         correcta: "ok",
+        tiempo: 1800 + n * 750, // ~0,75 s por número: difícil pero posible
       };
     },
   },
 
-  // MEMORIA (Simon): se enciende una secuencia de luces; repetila.
-  // "manual": el cliente la muestra, la valida y avisa "ok"/"fail".
+  // MEMORIA (Simon): repetí la secuencia de luces.
   simon: {
     manual: true,
     generar(ronda = 1) {
@@ -290,14 +283,23 @@ export const DESAFIOS = {
     },
   },
 
-  // REFLEJO: esperá la luz verde y tocá. Si te adelantás, caés.
-  // El servidor maneja el tiempo de la luz y valida por reacción.
+  // REFLEJO (luz verde): esperá la señal y tocá.
   luzverde: {
     reflejo: true,
     generar() {
+      return { enunciado: "ESPERÁ LA LUZ VERDE Y TOCÁ", datos: { tipo: "luzverde" }, correcta: null };
+    },
+  },
+
+  // COOPERATIVO (¡todos a la vez!): el grupo tiene que tocar SINCRONIZADO.
+  // Se coordinan en voz alta ("¡a la cuenta de tres!") y tocan juntos.
+  // Quien se descuelga, cae; si sincronizan, sobreviven todos.
+  sincronia: {
+    cooperativo: true,
+    generar() {
       return {
-        enunciado: "ESPERÁ LA LUZ VERDE Y TOCÁ",
-        datos: { tipo: "luzverde" },
+        enunciado: "¡TOQUEN TODOS A LA VEZ!",
+        datos: { tipo: "sincronia" },
         correcta: null,
       };
     },
@@ -307,27 +309,7 @@ export const DESAFIOS = {
 // Lista de tipos disponibles (la usa el servidor para rotar sin repetir).
 export const TIPOS = Object.keys(DESAFIOS);
 
-// Genera un desafío de un tipo concreto.
 export function generarDesafio(tipo, ronda) {
-  const d = DESAFIOS[tipo].generar(ronda);
-  return { tipo, ...d };
-}
-
-// Elige el desafío de la ronda. La primera siempre es suave (Stroop);
-// después varía. "forzar" puede ser:
-//   - un nombre de desafío (string) → siempre ese (para pruebas)
-//   - true → siempre Stroop (modo prueba determinista)
-//   - false → variedad normal
-export function elegirDesafio(ronda, forzar = false) {
-  let tipo;
-  if (typeof forzar === "string" && DESAFIOS[forzar]) {
-    tipo = forzar;
-  } else if (forzar || ronda === 1) {
-    tipo = "stroop";
-  } else {
-    const tipos = Object.keys(DESAFIOS);
-    tipo = tipos[Math.floor(Math.random() * tipos.length)];
-  }
   const d = DESAFIOS[tipo].generar(ronda);
   return { tipo, ...d };
 }

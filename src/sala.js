@@ -13,7 +13,7 @@
 // Object (sobrevive hibernaciones); lo crítico se persiste en storage.
 
 import { DurableObject } from "cloudflare:workers";
-import { TIPOS, generarDesafio } from "./desafios.js";
+import { DESAFIOS, TIPOS, generarDesafio } from "./desafios.js";
 
 function barajarLista(lista) {
   const c = [...lista];
@@ -63,34 +63,35 @@ export class Sala extends DurableObject {
       return {
         intro: 1200,
         resolucion: 1000,
-        rondaBase: 2500,
-        rondaMin: 1200,
-        paso: 300,
         rondas: 4,
         luzEsperaMin: 500,
         luzEsperaMax: 1000,
         luzReaccion: 1500,
         simonReaccion: 2000,
+        sincroniaTiempo: 4000,
+        sincroniaVentana: 1500,
+        pruebaNormal: 1800, // duración fija de un desafío común en pruebas
       };
     }
     return {
       intro: 7000,
       resolucion: 4000,
-      rondaBase: 7000, // tiempo de la primera ronda
-      rondaMin: 3000, // piso: por más que avance, nunca menos que esto
-      paso: 550, // cuánto se acorta cada ronda
       rondas: 8, // sobrevivir estas rondas = el grupo gana
       luzEsperaMin: 1200, // luz verde: mínimo de espera antes de la señal
       luzEsperaMax: 3800, // máximo de espera
       luzReaccion: 2500, // ventana para tocar después de la señal
       simonReaccion: 4500, // simon: ventana para repetir la secuencia
+      sincroniaTiempo: 9000, // ¡todos a la vez!: tiempo para coordinarse
+      sincroniaVentana: 1000, // margen entre el primero y el último toque
     };
   }
 
-  // Tiempo de respuesta de una ronda: arranca alto y se acorta.
-  rondaMs(ronda) {
-    const d = this.duraciones();
-    return Math.max(d.rondaMin, d.rondaBase - (ronda - 1) * d.paso);
+  // Qué tan apretado va el reloj según la ronda: generoso al principio,
+  // ajustado al final, pero nunca por debajo de un piso razonable.
+  // Multiplica el "tiempo cómodo" que declara cada desafío.
+  factorRonda(ronda) {
+    const f = 1.2 - (ronda - 1) * 0.055;
+    return Math.max(0.8, Math.min(1.2, f));
   }
 
   async fetch(request) {
@@ -311,6 +312,9 @@ export class Sala extends DurableObject {
       finFase,
       desafio: null,
       respuestas: {},
+      inicioPartida: Date.now(), // para medir cuánto sobrevivieron
+      ayudasDadas: 0,
+      rondasLimpias: 0,
     });
     await this.cambiarFase("intro");
     await this.ctx.storage.setAlarm(finFase);
@@ -356,6 +360,7 @@ export class Sala extends DurableObject {
 
     // Elegir el tipo de desafío. La ronda 1 es siempre Stroop (gentil);
     // el resto sale de la bolsa. Las pruebas pueden forzar un tipo.
+    const vivos = await this.leer("vivos", []);
     let tipo;
     if (this.env.SOLO_DESAFIO && TIPOS.includes(this.env.SOLO_DESAFIO)) {
       tipo = this.env.SOLO_DESAFIO;
@@ -366,23 +371,32 @@ export class Sala extends DurableObject {
       await this.ctx.storage.put("ultimoTipo", "stroop");
     } else {
       tipo = await this.proximoTipo();
+      // El cooperativo solo tiene sentido con 2+ vivos; si no, otro.
+      if (DESAFIOS[tipo]?.cooperativo && vivos.length < 2) tipo = await this.proximoTipo();
     }
     const desafio = generarDesafio(tipo, ronda);
     const ahora = Date.now();
+    const d = this.duraciones();
 
-    // Cada desafío de tiempo especial fija su propia duración:
+    // La duración base sale del "tiempo cómodo" del desafío, ajustado por
+    // ronda. Los desafíos de ritmo especial fijan la suya:
     // - luz verde: espera al azar (la señal, secreta) + ventana de reacción
     // - simon: lo que dura la secuencia + ventana para repetirla
+    // - sincronía (cooperativo): tiempo amplio para coordinarse
     let duracion, greenAt = 0;
-    const d = this.duraciones();
     if (tipo === "luzverde") {
       const espera = d.luzEsperaMin + Math.floor(Math.random() * (d.luzEsperaMax - d.luzEsperaMin));
       greenAt = ahora + espera;
       duracion = espera + d.luzReaccion;
     } else if (tipo === "simon") {
       duracion = (desafio.datos.mostrarMs || 2000) + d.simonReaccion;
+    } else if (tipo === "sincronia") {
+      duracion = d.sincroniaTiempo;
+    } else if (this.env.MODO_PRUEBA === "1") {
+      duracion = d.pruebaNormal;
     } else {
-      duracion = this.rondaMs(ronda);
+      const comodo = desafio.tiempo || 4500;
+      duracion = Math.max(2500, Math.round(comodo * this.factorRonda(ronda)));
     }
     const finFase = ahora + duracion;
 
@@ -397,7 +411,6 @@ export class Sala extends DurableObject {
     await this.cambiarFase("ronda");
     await this.ctx.storage.setAlarm(finFase);
 
-    const vivos = await this.leer("vivos", []);
     this.difundir({
       tipo: "desafio",
       ronda,
@@ -502,6 +515,9 @@ export class Sala extends DurableObject {
       if (objetivo) this.enviar(objetivo, { tipo: "escudo", de: yo.nombre });
     }
 
+    // Métrica de cooperación: cuántas ayudas se dieron entre fantasmas.
+    await this.ctx.storage.put("ayudasDadas", (await this.leer("ayudasDadas", 0)) + 1);
+
     this.enviar(ws, {
       tipo: "ayudaConfirmada",
       accion: msg.accion,
@@ -518,7 +534,17 @@ export class Sala extends DurableObject {
     const plantel = await this.leer("plantel", {});
     const escudos = await this.leer("escudos", []);
     const greenAt = await this.leer("greenAt", 0);
-    const esReflejo = desafio.datos?.tipo === "luzverde";
+    const tipoD = desafio.datos?.tipo;
+    const esReflejo = tipoD === "luzverde";
+
+    // Cooperativo "¡todos a la vez!": sobrevive quien tocó dentro de la
+    // ventana después del PRIMER toque. Si todos se coordinan, todos pasan.
+    let primerToque = 0;
+    if (tipoD === "sincronia") {
+      const tiempos = vivos.map((id) => respuestas[id]?.t).filter((t) => t != null);
+      primerToque = tiempos.length ? Math.min(...tiempos) : 0;
+    }
+    const ventana = this.duraciones().sincroniaVentana;
 
     const sobreviven = [];
     const desaparecidos = [];
@@ -526,15 +552,23 @@ export class Sala extends DurableObject {
     for (const id of vivos) {
       const r = respuestas[id];
       // Luz verde: acierta quien tocó DESPUÉS de la señal (no antes).
+      // Sincronía: acierta quien tocó junto al grupo (dentro de la ventana).
       // Resto: acierta quien eligió la opción correcta.
       const acerto = esReflejo
         ? r != null && r.t >= greenAt
-        : r != null && r.valor === desafio.correcta;
+        : tipoD === "sincronia"
+          ? r != null && r.t - primerToque <= ventana
+          : r != null && r.valor === desafio.correcta;
       // Si falló pero tenía escudo de un fantasma, resiste.
       const escudado = !acerto && escudos.includes(id);
       resultados.push({ id, ok: acerto, respondio: r != null, escudado });
       if (acerto || escudado) sobreviven.push(id);
       else desaparecidos.push(id);
+    }
+
+    // Métrica de cooperación: rondas en las que no cayó nadie.
+    if (desaparecidos.length === 0) {
+      await this.ctx.storage.put("rondasLimpias", (await this.leer("rondasLimpias", 0)) + 1);
     }
 
     const duracion = this.duraciones().resolucion;
@@ -547,13 +581,15 @@ export class Sala extends DurableObject {
     const rondaActual = await this.leer("ronda", 0);
     const total = this.duraciones().rondas;
     let susurro;
-    if (desaparecidos.length > 0) susurro = elegirDe(SUSURROS_CAIDA);
+    if (tipoD === "sincronia" && desaparecidos.length === 0) susurro = "SE MOVIERON COMO UNO SOLO. EL RÍO GRUÑE.";
+    else if (desaparecidos.length > 0) susurro = elegirDe(SUSURROS_CAIDA);
     else if (total - rondaActual <= 2 && sobreviven.length > 0) susurro = elegirDe(SUSURROS_FINAL);
     else susurro = elegirDe(SUSURROS_CALMA);
 
     this.difundir({
       tipo: "resolucion",
       correcta: desafio.correcta,
+      cooperativo: tipoD === "sincronia",
       resultados,
       desaparecidos: desaparecidos.map((id) => ({
         id, nombre: plantel[id]?.nombre || "???",
@@ -596,6 +632,7 @@ export class Sala extends DurableObject {
     await this.ctx.storage.deleteAlarm();
     const vivos = await this.leer("vivos", []);
     const plantel = await this.leer("plantel", {});
+    const inicio = await this.leer("inicioPartida", Date.now());
 
     this.difundir({
       tipo: "faseCambio",
@@ -607,6 +644,11 @@ export class Sala extends DurableObject {
         sobrevivientes: vivos.map((id) => ({
           id, nombre: plantel[id]?.nombre || "???", avatar: plantel[id]?.avatar || 0,
         })),
+        // Datos para la pantalla-premio: tiempo y cómo cooperaron.
+        duracionMs: Date.now() - inicio,
+        totalJugadores: Object.keys(plantel).length,
+        ayudasDadas: await this.leer("ayudasDadas", 0),
+        rondasLimpias: await this.leer("rondasLimpias", 0),
       },
     });
   }
@@ -619,6 +661,7 @@ export class Sala extends DurableObject {
     await this.ctx.storage.delete([
       "plantel", "vivos", "ronda", "desafio", "respuestas", "finFase",
       "escudos", "ayudasUsadas", "greenAt", "bolsa", "ultimoTipo",
+      "inicioPartida", "ayudasDadas", "rondasLimpias",
     ]);
     await this.cambiarFase("lobby");
 

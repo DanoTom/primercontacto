@@ -363,6 +363,20 @@ function dibujarDesafio(tipo, datos, soyVivo) {
     return;
   }
 
+  // Cooperativo "¡todos a la vez!": una zona de toque; el grupo se
+  // coordina en voz alta y toca junto.
+  if (tipo === "sincronia") {
+    const z = document.createElement("button");
+    z.className = "sincronia-zona";
+    z.id = "sincronia-zona";
+    z.textContent = "TOCAR";
+    z.disabled = !soyVivo;
+    z.onclick = responderSincronia;
+    zona.appendChild(z);
+    if (soyVivo) $("estado-respuesta").textContent = "PÓNGANSE DE ACUERDO Y TOQUEN JUNTOS";
+    return;
+  }
+
   // "Luz verde" es una zona de toque, no una grilla de opciones.
   if (tipo === "luzverde") {
     estado.luzVerde = false;
@@ -473,6 +487,21 @@ function responderLuz() {
     z.textContent = estado.luzVerde ? "¡TOCASTE!" : "TE ADELANTASTE...";
     z.classList.toggle("fallo", !estado.luzVerde);
   }
+}
+
+// Cooperativo: tocás cuando el grupo decide; el servidor mira que todos
+// hayan tocado dentro de la misma ventana.
+function responderSincronia() {
+  if (estado.respondi) return;
+  estado.respondi = true;
+  estado.ws.send(JSON.stringify({ tipo: "responder", valor: "tap" }));
+  const z = $("sincronia-zona");
+  if (z) {
+    z.disabled = true;
+    z.textContent = "¡LISTO!";
+    z.classList.add("tocado");
+  }
+  $("estado-respuesta").textContent = "ESPERANDO AL RESTO...";
 }
 
 // "En orden": solo avanza si tocás el número que toca. Al completar, listo.
@@ -642,11 +671,139 @@ function mostrarFinal(resultado) {
     cont.appendChild(fila);
   }
 
+  // ── El premio: elogio según cómo cooperaron + estadísticas ──
+  estado.resultadoFinal = resultado;
+  const ratio = resultado.totalJugadores
+    ? resultado.sobrevivientes.length / resultado.totalJugadores : 0;
+  let elogio;
+  if (!resultado.ganaron) {
+    elogio = "EL RÍO GANÓ ESTA NOCHE. LA REVANCHA ES DE USTEDES.";
+  } else if (resultado.sobrevivientes.length === resultado.totalJugadores) {
+    elogio = "★ NOCHE PERFECTA ★ NADIE CAYÓ. EQUIPO IMPECABLE.";
+  } else if (resultado.ayudasDadas >= 2) {
+    elogio = "SE CUIDARON ENTRE USTEDES. PURO TRABAJO EN EQUIPO.";
+  } else if (ratio >= 0.5) {
+    elogio = "BUEN TRABAJO EN GRUPO. AGUANTARON JUNTOS.";
+  } else {
+    elogio = "POR UN PELO... PERO ALGUIEN VIO EL AMANECER.";
+  }
+  $("elogio-final").textContent = elogio;
+
+  const tiempo = mmss(resultado.duracionMs || 0);
+  const stats = [
+    `AGUANTARON ${tiempo} · ${resultado.ronda}/${resultado.total} RONDAS`,
+    `${resultado.sobrevivientes.length} DE ${resultado.totalJugadores} VIERON EL AMANECER`,
+    `AYUDAS ENTRE FANTASMAS: ${resultado.ayudasDadas} · RONDAS SIN BAJAS: ${resultado.rondasLimpias}`,
+  ];
+  $("stats-final").innerHTML = stats.map((s) => `<p class="stat-linea">${s}</p>`).join("");
+
   if (resultado.ganaron) Sonido.exito();
   else Sonido.derrota();
   if (navigator.vibrate) navigator.vibrate(resultado.ganaron ? [80, 60, 80] : [250]);
 
   mostrarPantalla("final");
+}
+
+function mmss(ms) {
+  const s = Math.round(ms / 1000);
+  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
+}
+
+// Compartir el resultado: genera una "postal" (imagen) y la comparte o
+// la descarga; si no se puede, copia un texto al portapapeles.
+async function compartirResultado() {
+  const r = estado.resultadoFinal;
+  if (!r) return;
+  const url = "https://rio-manso.danotommasi.workers.dev";
+  const texto = r.ganaron
+    ? `🌫️ RÍO MANSO — Sobrevivimos la noche: ${r.sobrevivientes.length}/${r.totalJugadores} llegamos al amanecer en ${mmss(r.duracionMs)}. ¿Te animás?`
+    : `🌫️ RÍO MANSO — El Río se nos llevó a todos en la ronda ${r.ronda}. ¿Podés más que nosotros?`;
+  try {
+    const blob = await generarPostal(r);
+    const file = blob ? new File([blob], "rio-manso.png", { type: "image/png" }) : null;
+    if (file && navigator.canShare && navigator.canShare({ files: [file] })) {
+      await navigator.share({ files: [file], text: texto, url });
+      return;
+    }
+    if (navigator.share) {
+      await navigator.share({ text: texto, url });
+      return;
+    }
+    if (blob) descargar(blob, "rio-manso.png");
+    await navigator.clipboard?.writeText(`${texto} ${url}`);
+    $("nota-compartir").textContent = "POSTAL DESCARGADA Y TEXTO COPIADO.";
+  } catch {
+    try {
+      await navigator.clipboard.writeText(`${texto} ${url}`);
+      $("nota-compartir").textContent = "TEXTO COPIADO AL PORTAPAPELES.";
+    } catch {
+      $("nota-compartir").textContent = "NO SE PUDO COMPARTIR EN ESTE DISPOSITIVO.";
+    }
+  }
+}
+
+function descargar(blob, nombre) {
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = nombre;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+}
+
+// Dibuja la postal en un canvas (escena + título + datos) → PNG.
+function generarPostal(r) {
+  return new Promise((resolve) => {
+    const W = 1080, H = 1080;
+    const cv = document.createElement("canvas");
+    cv.width = W; cv.height = H;
+    const c = cv.getContext("2d");
+    c.fillStyle = "#0a120c";
+    c.fillRect(0, 0, W, H);
+    const img = new Image();
+    img.onload = () => pintar(img);
+    img.onerror = () => pintar(null);
+    img.src = r.ganaron ? "img/amanecer.jpg" : "img/cabana-vacia.jpg";
+
+    function pintar(im) {
+      if (im) {
+        // cubrir el ancho, recortando alto
+        const escala = W / im.width;
+        const h = im.height * escala;
+        c.drawImage(im, 0, 120, W, h);
+      }
+      // velo oscuro para que el texto se lea
+      const g = c.createLinearGradient(0, 0, 0, H);
+      g.addColorStop(0, "rgba(8,12,8,0.85)");
+      g.addColorStop(0.4, "rgba(8,12,8,0.25)");
+      g.addColorStop(0.7, "rgba(8,12,8,0.55)");
+      g.addColorStop(1, "rgba(8,12,8,0.95)");
+      c.fillStyle = g;
+      c.fillRect(0, 0, W, H);
+
+      c.textAlign = "center";
+      c.fillStyle = "#33ff66";
+      c.shadowColor = "rgba(51,255,102,0.6)";
+      c.shadowBlur = 24;
+      c.font = "160px VT323, monospace";
+      c.fillText("RÍO MANSO", W / 2, 180);
+      c.shadowBlur = 0;
+
+      c.fillStyle = r.ganaron ? "#ffd23f" : "#ff5040";
+      c.font = "70px VT323, monospace";
+      c.fillText(r.ganaron ? "LLEGÓ EL AMANECER" : "SILENCIO EN EL RÍO", W / 2, 270);
+
+      c.fillStyle = "#cfe9d6";
+      c.font = "56px VT323, monospace";
+      const lineas = [
+        `${r.sobrevivientes.length}/${r.totalJugadores} VIERON EL AMANECER`,
+        `AGUANTARON ${mmss(r.duracionMs)} · RONDA ${r.ronda}/${r.total}`,
+        `AYUDAS: ${r.ayudasDadas} · RONDAS LIMPIAS: ${r.rondasLimpias}`,
+      ];
+      lineas.forEach((l, i) => c.fillText(l, W / 2, 900 + i * 64));
+
+      cv.toBlob((b) => resolve(b), "image/png");
+    }
+  });
 }
 
 // ─── Reconexión ───
@@ -755,6 +912,7 @@ $("boton-unirse").onclick = () => {
 
 $("boton-iniciar").onclick = () => estado.ws.send(JSON.stringify({ tipo: "iniciar" }));
 $("boton-revancha").onclick = () => estado.ws.send(JSON.stringify({ tipo: "revancha" }));
+$("boton-compartir").onclick = compartirResultado;
 
 armarGrillaAvatares();
 
