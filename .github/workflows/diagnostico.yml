@@ -18,24 +18,24 @@ jobs:
 
       - name: Prueba multijugador contra producción (5 jugadores)
         env:
-          BASE_URL: https://primer-contacto.danotommasi.workers.dev
+          BASE_URL: https://rio-manso.danotommasi.workers.dev
         run: node pruebas/produccion.mjs
 
       - name: Probar endpoints con tail activo
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
         run: |
-          npx wrangler tail primer-contacto --format pretty > tail.log 2>&1 &
+          npx wrangler tail rio-manso --format pretty > tail.log 2>&1 &
           TAIL_PID=$!
           sleep 10
 
           echo "=== GET /api/sala/ABCD/estado ==="
           curl -s -m 20 -w "\nHTTP %{http_code}\n" \
-            https://primer-contacto.danotommasi.workers.dev/api/sala/ABCD/estado || echo "CURL FALLO: $?"
+            https://rio-manso.danotommasi.workers.dev/api/sala/ABCD/estado || echo "CURL FALLO: $?"
 
           echo "=== POST /api/crear ==="
           curl -s -m 30 -w "\nHTTP %{http_code}\n" -X POST \
-            https://primer-contacto.danotommasi.workers.dev/api/crear || echo "CURL FALLO: $?"
+            https://rio-manso.danotommasi.workers.dev/api/crear || echo "CURL FALLO: $?"
 
           sleep 5
           kill $TAIL_PID 2>/dev/null || true

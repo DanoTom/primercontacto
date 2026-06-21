@@ -8,7 +8,7 @@ de rapidez** contra reloj: quien falla o no contesta a tiempo es
 al amanecer, gana todo el grupo. Si el Río se los lleva a todos,
 pierden. Pero nadie quiere ser el próximo.
 
-**▶ Jugar:** https://primer-contacto.danotommasi.workers.dev
+**▶ Jugar:** https://rio-manso.danotommasi.workers.dev
 
 ## Cómo se juega
 

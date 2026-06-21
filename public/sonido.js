@@ -73,65 +73,101 @@ const Sonido = (() => {
   }
 
   // ─── La música del aparato ───
-  // Arpegio analógico hipnótico en La menor (con novena) alternando
-  // con Fa mayor séptima: clima ochentoso de sintetizador, original.
-  const PASO_MUSICA = 0.27; // corcheas a ~111 BPM
+  // Sintetizador de terror ochentoso (estilo Carpenter / Stranger
+  // Things): un ostinato hipnótico en Re menor que alterna el La con
+  // el Lab (el tritono, la nota de la desazón), un latido grave y un
+  // drone de fondo que respira. Todo original, sin archivos.
+  const PASO_MUSICA = 0.15; // semicorcheas a ~100 BPM
   const ARPEGIO = [
-    110.0, 130.81, 164.81, 246.94, 329.63, 246.94, 164.81, 130.81, // Am(add9)
-    87.31, 110.0, 130.81, 196.0, 261.63, 196.0, 130.81, 110.0,     // Fmaj7
+    146.83, 220.0, 293.66, 220.0, 174.61, 220.0, 293.66, 220.0,     // Dm (con La)
+    146.83, 207.65, 293.66, 207.65, 174.61, 207.65, 261.63, 207.65, // tritono (con Lab)
   ];
-  const BAJOS = [55.0, 43.65]; // La1 y Fa1, uno por compás
+  const PULSO_GRAVE = 73.42; // Re1: el latido
+  const DRONE_GRAVE = 36.71; // Re0: el drone de fondo
 
   let musicaDeseada = false;
   let musica = null;
 
+  // Una voz del ostinato: dos sierras apenas desafinadas (calor
+  // analógico) por un filtro resonante, con envolvente de pluck.
   function notaMusica(frecuencia, t, duracion, destino) {
-    const osc = ctx.createOscillator();
-    osc.type = "sawtooth";
-    osc.frequency.value = frecuencia;
     const filtro = ctx.createBiquadFilter();
     filtro.type = "lowpass";
-    filtro.frequency.value = 780;
-    filtro.Q.value = 5;
+    filtro.frequency.value = 900;
+    filtro.Q.value = 7;
     const vol = ctx.createGain();
     vol.gain.setValueAtTime(0, t);
-    vol.gain.linearRampToValueAtTime(0.075, t + 0.02);
-    vol.gain.exponentialRampToValueAtTime(0.001, t + duracion);
-    osc.connect(filtro).connect(vol).connect(destino);
-    osc.start(t);
-    osc.stop(t + duracion + 0.05);
+    vol.gain.linearRampToValueAtTime(0.06, t + 0.012);
+    vol.gain.exponentialRampToValueAtTime(0.0008, t + duracion);
+    for (const det of [-6, 6]) {
+      const osc = ctx.createOscillator();
+      osc.type = "sawtooth";
+      osc.frequency.value = frecuencia;
+      osc.detune.value = det;
+      osc.connect(filtro);
+      osc.start(t);
+      osc.stop(t + duracion + 0.05);
+    }
+    filtro.connect(vol).connect(destino);
   }
 
-  function bajoMusica(frecuencia, t, duracion, destino) {
+  // El latido grave: un golpe corto y redondo en cada negra.
+  function golpeGrave(frecuencia, t, destino) {
     const osc = ctx.createOscillator();
     osc.type = "triangle";
-    osc.frequency.value = frecuencia;
+    osc.frequency.setValueAtTime(frecuencia, t);
+    osc.frequency.exponentialRampToValueAtTime(frecuencia * 0.8, t + 0.18);
     const vol = ctx.createGain();
     vol.gain.setValueAtTime(0, t);
-    vol.gain.linearRampToValueAtTime(0.11, t + 0.06);
-    vol.gain.setValueAtTime(0.11, t + duracion - 0.3);
-    vol.gain.linearRampToValueAtTime(0, t + duracion);
+    vol.gain.linearRampToValueAtTime(0.16, t + 0.02);
+    vol.gain.exponentialRampToValueAtTime(0.001, t + 0.5);
     osc.connect(vol).connect(destino);
     osc.start(t);
-    osc.stop(t + duracion + 0.05);
+    osc.stop(t + 0.55);
   }
 
   function arrancarMusica() {
     if (!ctx || musica) return;
     const salida = ctx.createGain();
     salida.gain.setValueAtTime(0, ctx.currentTime);
-    salida.gain.linearRampToValueAtTime(0.55, ctx.currentTime + 2.5);
+    salida.gain.linearRampToValueAtTime(0.5, ctx.currentTime + 3);
     salida.connect(ctx.destination);
 
-    const m = { salida, paso: 0, proximo: ctx.currentTime + 0.15, timer: null };
+    // Drone de fondo: sierras graves desafinadas por un filtro que
+    // respira (un LFO lentísimo) = pad de tensión continuo.
+    const droneFiltro = ctx.createBiquadFilter();
+    droneFiltro.type = "lowpass";
+    droneFiltro.frequency.value = 200;
+    droneFiltro.Q.value = 6;
+    const droneVol = ctx.createGain();
+    droneVol.gain.value = 0.1;
+    droneFiltro.connect(droneVol).connect(salida);
+    const lfo = ctx.createOscillator();
+    lfo.frequency.value = 0.06;
+    const lfoGain = ctx.createGain();
+    lfoGain.gain.value = 120;
+    lfo.connect(lfoGain).connect(droneFiltro.frequency);
+    lfo.start();
+    const droneOscs = [lfo];
+    for (const f of [DRONE_GRAVE, DRONE_GRAVE * 1.5]) {
+      for (const det of [-5, 5]) {
+        const o = ctx.createOscillator();
+        o.type = "sawtooth";
+        o.frequency.value = f;
+        o.detune.value = det;
+        o.connect(droneFiltro);
+        o.start();
+        droneOscs.push(o);
+      }
+    }
+
+    const m = { salida, paso: 0, proximo: ctx.currentTime + 0.2, timer: null, drone: droneOscs };
     // Planificador con anticipación: agenda las notas que vienen.
     m.timer = setInterval(() => {
-      while (m.proximo < ctx.currentTime + 0.45) {
+      while (m.proximo < ctx.currentTime + 0.5) {
         const i = m.paso % ARPEGIO.length;
-        notaMusica(ARPEGIO[i], m.proximo, PASO_MUSICA * 0.95, salida);
-        if (i % 8 === 0) {
-          bajoMusica(BAJOS[(i / 8) | 0], m.proximo, PASO_MUSICA * 8, salida);
-        }
+        notaMusica(ARPEGIO[i], m.proximo, PASO_MUSICA * 1.6, salida);
+        if (i % 4 === 0) golpeGrave(PULSO_GRAVE, m.proximo, salida); // latido por negra
         m.paso++;
         m.proximo += PASO_MUSICA;
       }
@@ -145,8 +181,10 @@ const Sonido = (() => {
     musica = null;
     clearInterval(m.timer);
     try {
-      m.salida.gain.linearRampToValueAtTime(0, ctx.currentTime + 0.8);
-      setTimeout(() => m.salida.disconnect(), 1000);
+      m.salida.gain.linearRampToValueAtTime(0, ctx.currentTime + 0.9);
+      const fin = ctx.currentTime + 1.0;
+      (m.drone || []).forEach((o) => { try { o.stop(fin); } catch {} });
+      setTimeout(() => m.salida.disconnect(), 1100);
     } catch {}
   }
 

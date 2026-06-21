@@ -1,7 +1,8 @@
 {
-  // Configuración de Cloudflare Workers para Primer Contacto.
-  // "name" es el nombre del proyecto en Cloudflare.
-  "name": "primer-contacto",
+  // Configuración de Cloudflare Workers para Río Manso.
+  // "name" es el nombre del proyecto en Cloudflare y define la URL:
+  // https://rio-manso.danotommasi.workers.dev
+  "name": "rio-manso",
 
   // El punto de entrada del servidor (el "backend").
   "main": "src/worker.js",

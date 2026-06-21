@@ -3,8 +3,7 @@
 Guía en lenguaje simple para hacer cambios al juego, probarlos y
 publicarlos. Sin jerga: cada término técnico se explica la primera vez.
 
-**El juego vive acá:** https://primer-contacto.danotommasi.workers.dev
-(la dirección conserva el nombre técnico anterior; el juego es Río Manso.)
+**El juego vive acá:** https://rio-manso.danotommasi.workers.dev
 
 **Para agregar o cambiar desafíos:** se editan en `src/desafios.js`
 (cada desafío es un bloque con su `generar()`) y su dibujo en
