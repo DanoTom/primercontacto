@@ -21,6 +21,31 @@ const MAX_NOMBRE = 12;
 const CANT_AVATARES = 30;
 const CANT_COLORES = 8;
 
+// La voz del Río Manso entre ronda y ronda.
+const SUSURROS_CALMA = [
+  "EL RÍO ESPERA, PACIENTE.",
+  "POR AHORA, EL AGUA SIGUE QUIETA.",
+  "NADIE ESTA VEZ... TODAVÍA.",
+  "EL RÍO LOS MIRA. NO LE GUSTA PERDER.",
+  "SE ESCUCHA EL AGUA RESPIRANDO.",
+];
+const SUSURROS_CAIDA = [
+  "EL AGUA SE LLEVÓ LO SUYO.",
+  "UNO MENOS PARA VER EL AMANECER.",
+  "EL RÍO MANSO NUNCA DEVUELVE.",
+  "¿ESCUCHAN? ES EL AGUA, LLAMANDO.",
+  "LA CORRIENTE SE LO TRAGÓ SIN RUIDO.",
+];
+const SUSURROS_FINAL = [
+  "EL AMANECER ESTÁ CERCA. EL RÍO TIENE HAMBRE.",
+  "ÚLTIMOS MINUTOS. EL AGUA SUBE.",
+  "TAN CERCA DE LA LUZ... NO AFLOJEN.",
+];
+
+function elegirDe(lista) {
+  return lista[Math.floor(Math.random() * lista.length)];
+}
+
 export class Sala extends DurableObject {
   // Con MODO_PRUEBA las fases duran segundos, para que las pruebas
   // automáticas no esperen partidas reales.
@@ -465,6 +490,14 @@ export class Sala extends DurableObject {
     await this.cambiarFase("resolucion");
     await this.ctx.storage.setAlarm(finFase);
 
+    // La voz del Río reacciona: si se llevó a alguien, o si falta poco.
+    const rondaActual = await this.leer("ronda", 0);
+    const total = this.duraciones().rondas;
+    let susurro;
+    if (desaparecidos.length > 0) susurro = elegirDe(SUSURROS_CAIDA);
+    else if (total - rondaActual <= 2 && sobreviven.length > 0) susurro = elegirDe(SUSURROS_FINAL);
+    else susurro = elegirDe(SUSURROS_CALMA);
+
     this.difundir({
       tipo: "resolucion",
       correcta: desafio.correcta,
@@ -473,8 +506,9 @@ export class Sala extends DurableObject {
         id, nombre: plantel[id]?.nombre || "???",
       })),
       vivos: sobreviven,
-      ronda: await this.leer("ronda", 0),
-      total: this.duraciones().rondas,
+      ronda: rondaActual,
+      total,
+      susurro,
       restanteMs: duracion,
     });
   }

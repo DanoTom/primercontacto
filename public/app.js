@@ -456,7 +456,7 @@ function mostrarResolucion(msg) {
   if (msg.desaparecidos.length === 0) {
     const p = document.createElement("p");
     p.className = "subtitulo-fosforo";
-    p.textContent = "NADIE CAYÓ ESTA RONDA. EL RÍO ESPERA.";
+    p.textContent = "NADIE CAYÓ ESTA RONDA.";
     cont.appendChild(p);
   } else {
     msg.desaparecidos.forEach((d) => {
@@ -465,6 +465,13 @@ function mostrarResolucion(msg) {
       p.textContent = `EL RÍO MANSO SE LLEVÓ A ${d.nombre.toUpperCase()}`;
       cont.appendChild(p);
     });
+  }
+  // La voz del Río, en cursiva ámbar, cerrando la ronda.
+  if (msg.susurro) {
+    const s = document.createElement("p");
+    s.className = "susurro-rio";
+    s.textContent = `“${msg.susurro}”`;
+    cont.appendChild(s);
   }
 
   if (eraVivo) {

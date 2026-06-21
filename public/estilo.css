@@ -1334,3 +1334,14 @@ button.peligro:active:not(:disabled), #boton-emergencia:active:not(:disabled) {
   text-shadow: 0 0 16px rgba(51, 255, 102, 0.8);
 }
 .luzverde-zona.fallo { background: #3a0d0a; color: #ff5040; }
+
+/* La voz del Río Manso entre rondas */
+.susurro-rio {
+  font-family: var(--fuente-monitor);
+  font-size: 18px;
+  color: var(--ambar);
+  text-shadow: 0 0 8px rgba(255, 176, 0, 0.4);
+  font-style: italic;
+  margin: 14px 0 0;
+  opacity: 0.9;
+}
