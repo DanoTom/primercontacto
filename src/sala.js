@@ -33,6 +33,9 @@ export class Sala extends DurableObject {
         rondaMin: 1200,
         paso: 300,
         rondas: 4,
+        luzEsperaMin: 500,
+        luzEsperaMax: 1000,
+        luzReaccion: 1500,
       };
     }
     return {
@@ -42,6 +45,9 @@ export class Sala extends DurableObject {
       rondaMin: 3000, // piso: por más que avance, nunca menos que esto
       paso: 550, // cuánto se acorta cada ronda
       rondas: 8, // sobrevivir estas rondas = el grupo gana
+      luzEsperaMin: 1200, // luz verde: mínimo de espera antes de la señal
+      luzEsperaMax: 3800, // máximo de espera
+      luzReaccion: 2500, // ventana para tocar después de la señal
     };
   }
 
@@ -224,6 +230,9 @@ export class Sala extends DurableObject {
       tengoAyuda:
         !vivos.includes(entrada.id) &&
         !(await this.leer("ayudasUsadas", [])).includes(entrada.id),
+      yaVerde: desafio?.datos?.tipo === "luzverde"
+        ? Date.now() >= (await this.leer("greenAt", 0))
+        : false,
       desafio: fase === "ronda" && desafio
         ? { tipo: desafio.tipo, enunciado: desafio.enunciado, datos: desafio.datos }
         : null,
@@ -289,9 +298,25 @@ export class Sala extends DurableObject {
   async iniciarRonda() {
     const total = this.duraciones().rondas;
     const ronda = (await this.leer("ronda", 0)) + 1;
-    const desafio = elegirDesafio(ronda, this.env.MODO_PRUEBA === "1");
-    const duracion = this.rondaMs(ronda);
-    const finFase = Date.now() + duracion;
+    const desafio = elegirDesafio(
+      ronda,
+      this.env.SOLO_DESAFIO || this.env.MODO_PRUEBA === "1"
+    );
+    const ahora = Date.now();
+
+    // "Luz verde" tiene su propio ritmo: una espera al azar (la señal)
+    // y después una ventana para reaccionar. El momento de la luz se
+    // guarda en el servidor y NUNCA viaja al cliente.
+    let duracion, greenAt = 0;
+    if (desafio.tipo === "luzverde") {
+      const d = this.duraciones();
+      const espera = d.luzEsperaMin + Math.floor(Math.random() * (d.luzEsperaMax - d.luzEsperaMin));
+      greenAt = ahora + espera;
+      duracion = espera + d.luzReaccion;
+    } else {
+      duracion = this.rondaMs(ronda);
+    }
+    const finFase = ahora + duracion;
 
     await this.ctx.storage.put({
       ronda,
@@ -299,6 +324,7 @@ export class Sala extends DurableObject {
       respuestas: {},
       escudos: [], // protecciones de fantasmas para esta ronda
       finFase,
+      greenAt,
     });
     await this.cambiarFase("ronda");
     await this.ctx.storage.setAlarm(finFase);
@@ -310,10 +336,18 @@ export class Sala extends DurableObject {
       total,
       tipoDesafio: desafio.tipo,
       enunciado: desafio.enunciado,
-      datos: desafio.datos, // sin la respuesta correcta
+      datos: desafio.datos, // sin la respuesta correcta ni el greenAt
       vivos,
       restanteMs: duracion,
     });
+
+    // La señal de luz verde se dispara a todos en el momento exacto.
+    if (desafio.tipo === "luzverde") {
+      if (this._luzTimer) clearTimeout(this._luzTimer);
+      this._luzTimer = setTimeout(() => {
+        this.difundir({ tipo: "luzverde" });
+      }, Math.max(0, greenAt - Date.now()));
+    }
   }
 
   async manejarResponder(ws, msg) {
@@ -405,13 +439,19 @@ export class Sala extends DurableObject {
     const vivos = await this.leer("vivos", []);
     const plantel = await this.leer("plantel", {});
     const escudos = await this.leer("escudos", []);
+    const greenAt = await this.leer("greenAt", 0);
+    const esReflejo = desafio.datos?.tipo === "luzverde";
 
     const sobreviven = [];
     const desaparecidos = [];
     const resultados = [];
     for (const id of vivos) {
       const r = respuestas[id];
-      const acerto = r != null && r.valor === desafio.correcta;
+      // Luz verde: acierta quien tocó DESPUÉS de la señal (no antes).
+      // Resto: acierta quien eligió la opción correcta.
+      const acerto = esReflejo
+        ? r != null && r.t >= greenAt
+        : r != null && r.valor === desafio.correcta;
       // Si falló pero tenía escudo de un fantasma, resiste.
       const escudado = !acerto && escudos.includes(id);
       resultados.push({ id, ok: acerto, respondio: r != null, escudado });
@@ -491,7 +531,7 @@ export class Sala extends DurableObject {
 
     await this.ctx.storage.delete([
       "plantel", "vivos", "ronda", "desafio", "respuestas", "finFase",
-      "escudos", "ayudasUsadas",
+      "escudos", "ayudasUsadas", "greenAt",
     ]);
     await this.cambiarFase("lobby");
 

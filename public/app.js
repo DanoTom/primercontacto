@@ -127,6 +127,9 @@ function manejarMensaje(msg) {
     case "resolucion":
       mostrarResolucion(msg);
       break;
+    case "luzverde":
+      activarLuzVerde();
+      break;
     case "pista":
       recibirPista(msg);
       break;
@@ -307,6 +310,19 @@ function dibujarDesafio(tipo, datos, soyVivo) {
   const zona = $("zona-desafio");
   zona.innerHTML = "";
 
+  // "Luz verde" es una zona de toque, no una grilla de opciones.
+  if (tipo === "luzverde") {
+    estado.luzVerde = false;
+    const z = document.createElement("button");
+    z.className = "luzverde-zona esperando";
+    z.id = "luzverde-zona";
+    z.textContent = "ESPERÁ...";
+    z.disabled = !soyVivo;
+    z.onclick = responderLuz;
+    zona.appendChild(z);
+    return;
+  }
+
   // La pieza grande de arriba cambia según el desafío.
   if (tipo === "stroop") {
     const palabra = document.createElement("div");
@@ -324,11 +340,45 @@ function dibujarDesafio(tipo, datos, soyVivo) {
     sec.className = "secuencia-desafio";
     sec.textContent = datos.secuencia;
     zona.appendChild(sec);
+  } else if (tipo === "cuantos") {
+    const grid = document.createElement("div");
+    grid.className = "figuras-grid";
+    datos.figuras.forEach((ch) => {
+      const s = document.createElement("span");
+      s.className = "figura";
+      s.textContent = ch;
+      grid.appendChild(s);
+    });
+    zona.appendChild(grid);
+  } else if (tipo === "figurafalta") {
+    const sec = document.createElement("div");
+    sec.className = "secuencia-visual";
+    sec.textContent = datos.secuencia.join("   ");
+    zona.appendChild(sec);
   }
 
-  // Las opciones (botones) son comunes a todos los desafíos.
+  // Las opciones: botones de texto, o celdas visuales (distinto).
+  if (tipo === "distinto") {
+    const grilla = document.createElement("div");
+    grilla.className = "celdas-distinto";
+    grilla.style.gridTemplateColumns = `repeat(${datos.cols}, 1fr)`;
+    datos.opciones.forEach((op) => {
+      const b = document.createElement("button");
+      b.className = "opcion celda";
+      b.dataset.id = op.id;
+      b.innerHTML = `<span style="display:inline-block;transform:rotate(${op.rot}deg)">${op.char}</span>`;
+      b.disabled = !soyVivo;
+      b.onclick = () => responder(op.id, b);
+      grilla.appendChild(b);
+    });
+    zona.appendChild(grilla);
+    return;
+  }
+
   const grilla = document.createElement("div");
-  grilla.className = "opciones-desafio" + (tipo === "intruso" ? " intruso" : "");
+  grilla.className = "opciones-desafio" +
+    (tipo === "intruso" ? " intruso" : "") +
+    (tipo === "figurafalta" ? " figuras" : "");
   datos.opciones.forEach((op) => {
     const b = document.createElement("button");
     b.className = "opcion";
@@ -339,6 +389,29 @@ function dibujarDesafio(tipo, datos, soyVivo) {
     grilla.appendChild(b);
   });
   zona.appendChild(grilla);
+}
+
+// "Luz verde": la señal llegó. Si todavía no, tocar es adelantarse.
+function activarLuzVerde() {
+  if (estado.fase !== "ronda") return;
+  estado.luzVerde = true;
+  const z = $("luzverde-zona");
+  if (!z) return;
+  z.classList.remove("esperando");
+  z.classList.add("ya");
+  z.textContent = "¡YA! TOCÁ";
+}
+
+function responderLuz() {
+  if (estado.respondi) return;
+  estado.respondi = true;
+  estado.ws.send(JSON.stringify({ tipo: "responder", valor: "tap" }));
+  const z = $("luzverde-zona");
+  if (z) {
+    z.disabled = true;
+    z.textContent = estado.luzVerde ? "¡TOCASTE!" : "TE ADELANTASTE...";
+    z.classList.toggle("fallo", !estado.luzVerde);
+  }
 }
 
 function responder(valor, boton) {
@@ -373,8 +446,10 @@ function mostrarResolucion(msg) {
   $("titulo-resolucion").style.color = sigoVivo || !eraVivo ? "#33ff66" : "#ff5040";
 
   const det = $("detalle-resolucion");
-  const correcta = (msg.resultados.find((r) => r.ok)?.id, msg.correcta);
-  det.innerHTML = `<p class="dato-resolucion">LA RESPUESTA ERA: ${String(msg.correcta).toUpperCase()}</p>`;
+  // En "luz verde" no hay respuesta correcta que mostrar (es reacción).
+  det.innerHTML = msg.correcta != null
+    ? `<p class="dato-resolucion">LA RESPUESTA ERA: ${String(msg.correcta).toUpperCase()}</p>`
+    : `<p class="dato-resolucion">REFLEJOS BAJO PRESIÓN</p>`;
 
   const cont = $("desaparecidos-lista");
   cont.innerHTML = "";
@@ -459,6 +534,7 @@ function manejarReconexion(msg) {
     const soyVivo = msg.soyVivo;
     dibujarDesafio(msg.desafio.tipo, msg.desafio.datos, soyVivo && !msg.yaRespondi);
     dibujarPanelFantasma(soyVivo);
+    if (msg.desafio.tipo === "luzverde" && msg.yaVerde) activarLuzVerde();
     if (msg.yaRespondi) {
       document.querySelectorAll("#zona-desafio .opcion").forEach((b) => (b.disabled = true));
       $("estado-respuesta").textContent = "YA RESPONDISTE. AGUANTÁ...";

@@ -9,8 +9,13 @@ function ok(cond, desc) {
   if (!cond) fallas++;
 }
 
-// Cada tipo, generado muchas veces, debe ser siempre resoluble.
+// Cada tipo por opción, generado muchas veces, debe ser resoluble.
 for (const [tipo, def] of Object.entries(DESAFIOS)) {
+  if (def.reflejo) {
+    // Los desafíos de reflejo (luz verde) no se validan por opción.
+    ok(!!def.generar().datos, `${tipo}: genera (desafío de reflejo)`);
+    continue;
+  }
   let todoBien = true;
   let opcionesOk = true;
   for (let ronda = 1; ronda <= 8; ronda++) {

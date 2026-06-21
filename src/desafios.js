@@ -2,6 +2,9 @@
 // devuelve { enunciado, datos (públicos), correcta (secreta) }.
 // El servidor guarda "correcta" y nunca la manda hasta la resolución.
 //
+// Los desafíos con `reflejo:true` (Luz Verde) no se validan por opción
+// sino por tiempo de reacción: el servidor maneja su lógica aparte.
+//
 // Para sumar un desafío nuevo: agregá una entrada en DESAFIOS y su
 // dibujo en el cliente (public/app.js → dibujarDesafio).
 
@@ -50,6 +53,9 @@ const CATEGORIAS = {
   ropa: ["CAMPERA", "PANTALÓN", "REMERA", "GORRO", "MEDIAS", "BUFANDA"],
   oficios: ["MÉDICO", "MAESTRO", "BOMBERO", "PANADERO", "PLOMERO", "CARTERO"],
 };
+
+// Figuras para los desafíos visuales.
+const FIGURAS = ["▲", "●", "■", "◆", "★", "♥"];
 
 export const DESAFIOS = {
   // Una palabra-color pintada de OTRO color. Tocá el color de la TINTA.
@@ -131,12 +137,10 @@ export const DESAFIOS = {
       const inicio = 1 + Math.floor(Math.random() * 6);
       let serie, siguiente;
       if (ronda >= 4 && Math.random() < 0.4) {
-        // multiplicativa
-        const r = 2 + Math.floor(Math.random() * 2); // ×2 o ×3
+        const r = 2 + Math.floor(Math.random() * 2);
         serie = [inicio, inicio * r, inicio * r * r, inicio * r * r * r];
         siguiente = serie[3] * r;
       } else {
-        // aritmética
         const paso = 2 + Math.floor(Math.random() * (2 + ronda));
         serie = [inicio, inicio + paso, inicio + 2 * paso, inicio + 3 * paso];
         siguiente = inicio + 4 * paso;
@@ -152,14 +156,97 @@ export const DESAFIOS = {
       };
     },
   },
+
+  // VISUAL: una grilla de triángulos; uno está girado distinto. Tocalo.
+  distinto: {
+    generar(ronda = 1) {
+      const cantidad = Math.min(12, 5 + ronda);
+      const cols = cantidad <= 6 ? 3 : 4;
+      // La diferencia de giro se achica con la ronda: cada vez más sutil.
+      const giro = Math.max(28, 190 - ronda * 22);
+      const odd = Math.floor(Math.random() * cantidad);
+      const opciones = [];
+      for (let i = 0; i < cantidad; i++) {
+        opciones.push({ id: "c" + i, char: "▲", rot: i === odd ? giro : 0 });
+      }
+      return {
+        enunciado: "TOCÁ EL TRIÁNGULO GIRADO DISTINTO",
+        datos: { tipo: "distinto", cols, opciones },
+        correcta: "c" + odd,
+      };
+    },
+  },
+
+  // VISUAL: un montón de figuras mezcladas. ¿Cuántas de una clase hay?
+  cuantos: {
+    generar(ronda = 1) {
+      const total = Math.min(26, 9 + ronda * 2);
+      const target = 2 + Math.floor(Math.random() * (total - 4));
+      const figuras = [];
+      for (let i = 0; i < target; i++) figuras.push("▲");
+      for (let i = target; i < total; i++) figuras.push("●");
+      return {
+        enunciado: "¿CUÁNTOS ▲ HAY?",
+        datos: {
+          tipo: "cuantos",
+          figuras: barajar(figuras),
+          opciones: opcionesNumericas(target, 4, Math.max(2, Math.round(total * 0.18))),
+        },
+        correcta: String(target),
+      };
+    },
+  },
+
+  // VISUAL: una secuencia de figuras que se repite. ¿Cuál sigue?
+  figurafalta: {
+    generar(ronda = 1) {
+      const simbolos = barajar(FIGURAS);
+      const largoCiclo = ronda >= 4 ? 3 : 2;
+      const ciclo = simbolos.slice(0, largoCiclo);
+      const visual = [];
+      for (let i = 0; i < 5; i++) visual.push(ciclo[i % ciclo.length]);
+      const siguiente = ciclo[5 % ciclo.length];
+      const opcSet = new Set([siguiente, ...ciclo]);
+      for (const s of simbolos) {
+        if (opcSet.size >= 4) break;
+        opcSet.add(s);
+      }
+      return {
+        enunciado: "¿QUÉ FIGURA SIGUE?",
+        datos: {
+          tipo: "figurafalta",
+          secuencia: [...visual, "?"],
+          opciones: barajar([...opcSet]).map((c) => ({ id: c, nombre: c })),
+        },
+        correcta: siguiente,
+      };
+    },
+  },
+
+  // REFLEJO: esperá la luz verde y tocá. Si te adelantás, caés.
+  // El servidor maneja el tiempo de la luz y valida por reacción.
+  luzverde: {
+    reflejo: true,
+    generar() {
+      return {
+        enunciado: "ESPERÁ LA LUZ VERDE Y TOCÁ",
+        datos: { tipo: "luzverde" },
+        correcta: null,
+      };
+    },
+  },
 };
 
 // Elige el desafío de la ronda. La primera siempre es suave (Stroop);
-// después varía. Con soloStroop (modo prueba) es siempre el mismo,
-// para que las pruebas automáticas sean deterministas.
-export function elegirDesafio(ronda, soloStroop = false) {
+// después varía. "forzar" puede ser:
+//   - un nombre de desafío (string) → siempre ese (para pruebas)
+//   - true → siempre Stroop (modo prueba determinista)
+//   - false → variedad normal
+export function elegirDesafio(ronda, forzar = false) {
   let tipo;
-  if (soloStroop || ronda === 1) {
+  if (typeof forzar === "string" && DESAFIOS[forzar]) {
+    tipo = forzar;
+  } else if (forzar || ronda === 1) {
     tipo = "stroop";
   } else {
     const tipos = Object.keys(DESAFIOS);
